@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -27,7 +27,25 @@ type OwnerProfile = {
   city: string | null;
 };
 
+function LoadingScreen() {
+  return (
+    <main className="min-h-screen bg-[#F7F5FC] px-4 py-16">
+      <p className="text-center text-[#655A76]">
+        Kedi ilanı yükleniyor...
+      </p>
+    </main>
+  );
+}
+
 export default function KediDetayPage() {
+  return (
+    <Suspense fallback={<LoadingScreen />}>
+      <KediDetayContent />
+    </Suspense>
+  );
+}
+
+function KediDetayContent() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const catId = params.id;
@@ -96,13 +114,7 @@ export default function KediDetayPage() {
   }, [catId]);
 
   if (loading) {
-    return (
-      <main className="min-h-screen bg-[#F7F5FC] px-4 py-16">
-        <p className="text-center text-[#655A76]">
-          Kedi ilanı yükleniyor...
-        </p>
-      </main>
-    );
+    return <LoadingScreen />;
   }
 
   if (error || !cat) {
