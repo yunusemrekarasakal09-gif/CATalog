@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -54,7 +54,23 @@ function formatDate(value: string) {
   });
 }
 
+function LoadingScreen() {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[#F7F5FC] text-[#655A76]">
+      Mesajların yükleniyor...
+    </main>
+  );
+}
+
 export default function MesajlarPage() {
+  return (
+    <Suspense fallback={<LoadingScreen />}>
+      <MesajlarContent />
+    </Suspense>
+  );
+}
+
+function MesajlarContent() {
   const searchParams = useSearchParams();
   const requestedUser = searchParams.get("user");
   const requestedCat = searchParams.get("cat");
@@ -811,13 +827,14 @@ export default function MesajlarPage() {
                         {showDate && (
                           <div className="my-4 text-center">
                             <span className="rounded-full bg-[#F0EAF6] px-3 py-1 text-[11px] font-semibold text-[#777080]">
-                              {new Date(
-                                message.created_at
-                              ).toLocaleDateString("tr-TR", {
-                                day: "numeric",
-                                month: "long",
-                                year: "numeric",
-                              })}
+                              {new Date(message.created_at).toLocaleDateString(
+                                "tr-TR",
+                                {
+                                  day: "numeric",
+                                  month: "long",
+                                  year: "numeric",
+                                }
+                              )}
                             </span>
                           </div>
                         )}
