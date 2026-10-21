@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
@@ -48,7 +47,23 @@ type ReviewerProfile = {
   avatar_url: string | null;
 };
 
+function ProfileLoading() {
+  return (
+    <main className="min-h-screen bg-[#FAF8FC] px-4 py-12 text-center text-[#624B82]">
+      Profil yükleniyor...
+    </main>
+  );
+}
+
 export default function ProfilePage() {
+  return (
+    <Suspense fallback={<ProfileLoading />}>
+      <ProfileContent />
+    </Suspense>
+  );
+}
+
+function ProfileContent() {
   const params = useParams();
   const profileId = params.id as string;
 
@@ -357,11 +372,7 @@ export default function ProfilePage() {
   }
 
   if (loading) {
-    return (
-      <main className="min-h-screen bg-[#FAF8FC] px-4 py-12 text-center text-[#624B82]">
-        Profil yükleniyor...
-      </main>
-    );
+    return <ProfileLoading />;
   }
 
   if (!profile) {
@@ -474,9 +485,7 @@ export default function ProfilePage() {
             <h2 className="text-2xl font-black text-[#624B82]">
               Kedi ilanları
             </h2>
-            <span className="text-sm text-[#777080]">
-              {cats.length} ilan
-            </span>
+            <span className="text-sm text-[#777080]">{cats.length} ilan</span>
           </div>
 
           {cats.length === 0 ? (
@@ -509,9 +518,7 @@ export default function ProfilePage() {
 
                     <div className="mt-2 space-y-1 text-sm text-[#777080]">
                       {cat.breed && <p>Irk: {cat.breed}</p>}
-                      {cat.age_years != null && (
-                        <p>Yaş: {cat.age_years}</p>
-                      )}
+                      {cat.age_years != null && <p>Yaş: {cat.age_years}</p>}
                       {cat.gender && <p>Cinsiyet: {cat.gender}</p>}
                       {cat.color && <p>Renk: {cat.color}</p>}
                       {cat.city && <p>Şehir: {cat.city}</p>}
