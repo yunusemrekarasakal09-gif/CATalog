@@ -4,7 +4,9 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { supabase } from "@/lib/supabase";
+import { useTheme } from "@/components/ThemeProvider";
 
 type ProfileForm = {
   display_name: string;
@@ -30,6 +32,11 @@ const MAX_PHOTO_SIZE = 5 * 1024 * 1024;
 
 export default function ProfilTamamlaPage() {
   const router = useRouter();
+  const { darkMode, toggleTheme, themeReady } = useTheme();
+  const palette = darkMode
+    ? { page: "#15121D", text: "#F5EFFB", muted: "#B8AEC6", card: "rgba(32,27,41,0.94)", border: "rgba(255,255,255,0.12)", soft: "#2A2235", input: "#191521", accent: "#A184D5", accentText: "#D9C9F0" }
+    : { page: "#FAF8FC", text: "#302542", muted: "#82778F", card: "rgba(255,255,255,0.94)", border: "#ECE5F3", soft: "#F0E7F8", input: "#FCFAFE", accent: "#8060AE", accentText: "#624B82" };
+  const themeBackground = darkMode ? "/images/brand/arkaplan1.png" : "/images/brand/arkaplan2.png";
 
   const [form, setForm] = useState<ProfileForm>(initialForm);
   const [userId, setUserId] = useState("");
@@ -287,19 +294,31 @@ export default function ProfilTamamlaPage() {
     }
   }
 
-  if (loading) {
+  if (loading || !themeReady) {
     return (
-      <main className="min-h-screen bg-[#FBF9FE] px-4 py-12">
-        <p className="text-center text-[#655A76]">
-          Profil bilgileri yükleniyor...
-        </p>
+      <main className="flex min-h-screen items-center justify-center px-4 py-12 text-center" style={{ backgroundColor: palette.page, color: palette.muted, backgroundImage: `url("${themeBackground}")`, backgroundPosition: "center", backgroundSize: "cover" }}>
+        Profil bilgileri yükleniyor...
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#FBF9FE] px-4 py-8 sm:py-12">
+    <main className={`catalog-profile-form min-h-screen px-4 pb-10 ${darkMode ? "catalog-profile-dark" : "catalog-profile-light"}`} style={{ backgroundColor: palette.page, color: palette.text, backgroundImage: `url("${themeBackground}")`, backgroundPosition: "center top", backgroundSize: "cover", backgroundAttachment: "fixed" }}>
+      <header className="sticky top-0 z-30 -mx-4 mb-7 border-b backdrop-blur-xl" style={{ borderColor: palette.border, backgroundColor: darkMode ? "rgba(25,21,33,0.95)" : "rgba(255,255,255,0.95)" }}>
+        <div className="relative mx-auto flex h-[144px] max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
+          <Link href="/" aria-label="CAT-ALOG ana sayfa" className="relative flex h-full w-[120px] shrink-0 items-center transition hover:opacity-80">
+            <Image src={darkMode ? "/images/brand/logo1.png" : "/images/brand/logo2.png"} alt="CAT-ALOG" width={240} height={240} priority className="absolute left-1/2 top-1/2 h-[240px] w-[240px] max-w-none -translate-x-1/2 -translate-y-1/2 object-contain" />
+          </Link>
+          <div className="flex min-w-0 items-center justify-end gap-2 sm:gap-3">
+            <Link href="/profil" className="hidden rounded-xl border px-4 py-3 text-sm font-bold transition hover:opacity-80 sm:inline-flex" style={{ borderColor: palette.border, color: palette.text }}>← Profile dön</Link>
+            <button type="button" onClick={toggleTheme} aria-label={darkMode ? "Gündüz temasına geç" : "Gece temasına geç"} title={darkMode ? "Gündüz teması" : "Gece teması"} className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-2xl transition hover:scale-105">
+              <Image src={darkMode ? "/images/icons/gece.png" : "/images/icons/gündüz.png"} alt={darkMode ? "Gece teması" : "Gündüz teması"} width={43} height={43} className="h-[43px] w-[43px] object-contain" />
+            </button>
+          </div>
+        </div>
+      </header>
       <div className="mx-auto max-w-2xl">
+
         <Link
           href="/profil"
           className="text-sm font-semibold text-[#75658E] hover:text-[#503B70]"
@@ -307,7 +326,7 @@ export default function ProfilTamamlaPage() {
           ← Profile dön
         </Link>
 
-        <section className="mt-6 rounded-3xl border border-[#EDE5F5] bg-white p-5 shadow-sm sm:p-8">
+        <section className="mt-6 rounded-3xl border p-5 shadow-sm sm:p-8" style={{ borderColor: palette.border, backgroundColor: palette.card }}>
           <h1 className="text-2xl font-black text-[#352747] sm:text-3xl">
             Profilini düzenle
           </h1>
@@ -342,15 +361,11 @@ export default function ProfilTamamlaPage() {
               </label>
 
               <div className="flex flex-wrap items-center gap-5">
-                <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border border-[#EDE5F5] bg-[#F3ECFA] text-4xl">
+                <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border" style={{ borderColor: palette.border, backgroundColor: palette.soft }}>
                   {photoPreview ? (
-                    <img
-                      src={photoPreview}
-                      alt="Profil fotoğrafı önizlemesi"
-                      className="h-full w-full object-cover"
-                    />
+                    <img src={photoPreview} alt="Profil fotoğrafı önizlemesi" className="h-full w-full object-cover" />
                   ) : (
-                    <span>🐱</span>
+                    <Image src={darkMode ? "/images/icons/user%20ikonu.png" : "/images/icons/user%20ikonu2.png"} alt="Profil fotoğrafı yok" width={96} height={96} className="h-full w-full object-contain p-2" />
                   )}
                 </div>
 
@@ -532,6 +547,15 @@ export default function ProfilTamamlaPage() {
           </form>
         </section>
       </div>
+      <style jsx global>{`
+        .catalog-profile-form .text-[#352747], .catalog-profile-form .text-[#49385F] { color: ${darkMode ? "#F5EFFB" : "#49385F"} !important; }
+        .catalog-profile-form .text-[#777080] { color: ${darkMode ? "#B8AEC6" : "#777080"} !important; }
+        .catalog-profile-form .text-[#624B82], .catalog-profile-form .text-[#75658E] { color: ${darkMode ? "#D9C9F0" : "#624B82"} !important; }
+        .catalog-profile-form .bg-white { background-color: ${darkMode ? "rgba(32,27,41,0.94)" : "#FFFFFF"} !important; }
+        .catalog-profile-form input, .catalog-profile-form textarea { background-color: ${darkMode ? "#191521" : "#FFFFFF"}; color: ${darkMode ? "#F5EFFB" : "#302542"}; border-color: ${darkMode ? "rgba(255,255,255,0.16)" : "#DED2EB"}; }
+        .catalog-profile-form input::placeholder, .catalog-profile-form textarea::placeholder { color: ${darkMode ? "#9185A1" : "#93899E"}; }
+        .catalog-profile-form .border-t { border-color: ${darkMode ? "rgba(255,255,255,0.12)" : "#F0EAF6"}; }
+      `}</style>
     </main>
   );
 }

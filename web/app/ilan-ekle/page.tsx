@@ -1,8 +1,9 @@
 
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useTheme } from "@/components/ThemeProvider";
 
 const catBreeds = [
   "Ankara Kedisi",
@@ -45,8 +46,7 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 export default function IlanEklePage() {
-  const [darkMode, setDarkMode] = useState(true);
-  const [themeLoaded, setThemeLoaded] = useState(false);
+  const { darkMode, toggleTheme, themeReady } = useTheme();
 
   const [name, setName] = useState("");
   const [breed, setBreed] = useState("");
@@ -64,23 +64,6 @@ export default function IlanEklePage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    const savedTheme = localStorage.getItem("catalog-theme");
-
-    if (savedTheme === "light") {
-      setDarkMode(false);
-    } else if (savedTheme === "dark") {
-      setDarkMode(true);
-    }
-
-    setThemeLoaded(true);
-  }, []);
-
-  useEffect(() => {
-    if (themeLoaded) {
-      localStorage.setItem("catalog-theme", darkMode ? "dark" : "light");
-    }
-  }, [darkMode, themeLoaded]);
 
   const pageStyle = {
     minHeight: "100vh",
@@ -299,6 +282,10 @@ export default function IlanEklePage() {
     "w-full rounded-xl px-4 py-3 outline-none transition focus:ring-2 focus:ring-purple-400";
   const sectionClass = "space-y-2";
 
+  if (!themeReady) {
+    return <main className="min-h-screen" aria-label="Tema yükleniyor" />;
+  }
+
   return (
     <main style={pageStyle} className="relative px-4 py-8 sm:px-6 sm:py-12">
       <div
@@ -321,7 +308,7 @@ export default function IlanEklePage() {
 </a>
           <button
             type="button"
-            onClick={() => setDarkMode((current) => !current)}
+            onClick={toggleTheme}
             className="flex shrink-0 items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition hover:scale-[1.02]"
             style={{
               backgroundColor: darkMode
@@ -337,34 +324,26 @@ export default function IlanEklePage() {
           >
             {darkMode ? (
               <>
-                <svg
-                  viewBox="0 0 24 24"
-                  width="19"
-                  height="19"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                >
-                  <circle cx="12" cy="12" r="4" />
-                  <path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" />
-                </svg>
+                <img
+                  src="/images/icons/gündüz.png"
+                  alt=""
+                  width={19}
+                  height={19}
+                  className="h-[19px] w-[19px] object-contain"
+                  aria-hidden="true"
+                />
                 Açık tema
               </>
             ) : (
               <>
-                <svg
-                  viewBox="0 0 24 24"
-                  width="19"
-                  height="19"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z" />
-                </svg>
+                <img
+                  src="/images/icons/gece.png"
+                  alt=""
+                  width={19}
+                  height={19}
+                  className="h-[19px] w-[19px] object-contain"
+                  aria-hidden="true"
+                />
                 Koyu tema
               </>
             )}

@@ -4,7 +4,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { supabase } from "@/lib/supabase";
+import { useTheme } from "@/components/ThemeProvider";
 
 type Profile = {
   id: string;
@@ -31,6 +33,11 @@ type Cat = {
 
 export default function ProfilPage() {
   const router = useRouter();
+  const { darkMode, toggleTheme, themeReady } = useTheme();
+  const palette = darkMode
+    ? { page: "#15121D", text: "#F5EFFB", muted: "#B8AEC6", card: "rgba(32,27,41,0.94)", border: "rgba(255,255,255,0.12)", soft: "#2A2235", accent: "#A184D5", accentText: "#D9C9F0" }
+    : { page: "#FAF8FC", text: "#302542", muted: "#82778F", card: "rgba(255,255,255,0.94)", border: "#ECE5F3", soft: "#F0E7F8", accent: "#8060AE", accentText: "#624B82" };
+  const themeBackground = darkMode ? "/images/brand/arkaplan1.png" : "/images/brand/arkaplan2.png";
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [cats, setCats] = useState<Cat[]>([]);
@@ -103,18 +110,35 @@ export default function ProfilPage() {
     };
   }, [router]);
 
-  if (loading) {
+  if (loading || !themeReady) {
     return (
-      <main className="min-h-screen bg-[#FBF9FE] px-4 py-12">
-        <div className="mx-auto max-w-4xl text-center text-[#655A76]">
-          Profil yükleniyor...
-        </div>
+      <main
+        className="flex min-h-screen items-center justify-center px-4 py-12 text-center"
+        style={{ backgroundColor: palette.page, color: palette.muted, backgroundImage: `url("${themeBackground}")`, backgroundPosition: "center", backgroundSize: "cover" }}
+      >
+        Profil yükleniyor...
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#FBF9FE] px-4 py-8 sm:py-12">
+    <main
+      className={`catalog-profile-page min-h-screen px-4 pb-10 ${darkMode ? "catalog-profile-dark" : "catalog-profile-light"}`}
+      style={{ backgroundColor: palette.page, color: palette.text, backgroundImage: `url("${themeBackground}")`, backgroundPosition: "center top", backgroundSize: "cover", backgroundAttachment: "fixed" }}
+    >
+      <header className="sticky top-0 z-30 -mx-4 mb-7 border-b backdrop-blur-xl" style={{ borderColor: palette.border, backgroundColor: darkMode ? "rgba(25,21,33,0.95)" : "rgba(255,255,255,0.95)" }}>
+        <div className="relative mx-auto flex h-[144px] max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
+          <Link href="/" aria-label="CAT-ALOG ana sayfa" className="relative flex h-full w-[120px] shrink-0 items-center transition hover:opacity-80">
+            <Image src={darkMode ? "/images/brand/logo1.png" : "/images/brand/logo2.png"} alt="CAT-ALOG" width={240} height={240} priority className="absolute left-1/2 top-1/2 h-[240px] w-[240px] max-w-none -translate-x-1/2 -translate-y-1/2 object-contain" />
+          </Link>
+          <div className="flex min-w-0 items-center justify-end gap-2 sm:gap-3">
+            <Link href="/" className="hidden rounded-xl border px-4 py-3 text-sm font-bold transition hover:opacity-80 sm:inline-flex" style={{ borderColor: palette.border, color: palette.text }}>← Ana sayfa</Link>
+            <button type="button" onClick={toggleTheme} aria-label={darkMode ? "Gündüz temasına geç" : "Gece temasına geç"} title={darkMode ? "Gündüz teması" : "Gece teması"} className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-2xl transition hover:scale-105">
+              <Image src={darkMode ? "/images/icons/gece.png" : "/images/icons/gündüz.png"} alt={darkMode ? "Gece teması" : "Gündüz teması"} width={43} height={43} className="h-[43px] w-[43px] object-contain" />
+            </button>
+          </div>
+        </div>
+      </header>
       <div className="mx-auto max-w-4xl">
         <Link
           href="/"
@@ -133,7 +157,13 @@ export default function ProfilPage() {
                   className="h-full w-full object-cover"
                 />
               ) : (
-                <span aria-label="Varsayılan profil simgesi">🐱</span>
+                <Image
+                  src={darkMode ? "/images/icons/user%20ikonu.png" : "/images/icons/user%20ikonu2.png"}
+                  alt="Profil fotoğrafı yok"
+                  width={112}
+                  height={112}
+                  className="h-full w-full object-contain p-3"
+                />
               )}
             </div>
 
@@ -228,7 +258,15 @@ export default function ProfilPage() {
 
           {cats.length === 0 ? (
             <div className="rounded-3xl border border-dashed border-[#DED2EB] bg-white px-5 py-12 text-center">
-              <div className="text-4xl">🐈</div>
+              <div className="flex justify-center">
+                <Image
+                  src={darkMode ? "/images/icons/kedi1.png" : "/images/icons/kedi2.png"}
+                  alt="Kedi simgesi"
+                  width={76}
+                  height={76}
+                  className="h-[76px] w-[76px] object-contain"
+                />
+              </div>
               <h3 className="mt-4 font-bold text-[#49385F]">
                 Henüz aktif bir ilanınız yok
               </h3>
@@ -258,8 +296,14 @@ export default function ProfilPage() {
                           className="h-full w-full object-cover transition duration-300 hover:scale-105"
                         />
                       ) : (
-                        <div className="flex h-full items-center justify-center text-6xl">
-                          🐱
+                        <div className="flex h-full items-center justify-center">
+                          <Image
+                            src={darkMode ? "/images/icons/kedi1.png" : "/images/icons/kedi2.png"}
+                            alt="Kedi simgesi"
+                            width={100}
+                            height={100}
+                            className="h-[100px] w-[100px] object-contain"
+                          />
                         </div>
                       )}
                     </div>
@@ -309,6 +353,14 @@ export default function ProfilPage() {
           )}
         </section>
       </div>
+      <style jsx global>{`
+        .catalog-profile-page .bg-white { background-color: ${darkMode ? "rgba(32,27,41,0.94)" : "#FFFFFF"} !important; }
+        .catalog-profile-page [class*="bg-[#F8F5FC]"], .catalog-profile-page [class*="bg-[#F3ECFA]"] { background-color: ${darkMode ? "#2A2235" : "#F5F0F9"} !important; }
+        .catalog-profile-page [class*="text-[#352747]"], .catalog-profile-page [class*="text-[#49385F]"] { color: ${darkMode ? "#D9C9F0" : "#352747"} !important; }
+        .catalog-profile-page [class*="text-[#624B82]"] { color: ${darkMode ? "#D9C9F0" : "#624B82"} !important; }
+        .catalog-profile-page [class*="text-[#655A76]"], .catalog-profile-page [class*="text-[#777080]"] { color: ${darkMode ? "#B8AEC6" : "#777080"} !important; }
+        .catalog-profile-page [class*="border-[#EDE5F5]"], .catalog-profile-page [class*="border-[#DED2EB]"], .catalog-profile-page [class*="border-[#E3D7F0]"] { border-color: ${darkMode ? "rgba(255,255,255,0.12)" : "#EAE3F1"} !important; }
+      `}</style>
     </main>
   );
 }

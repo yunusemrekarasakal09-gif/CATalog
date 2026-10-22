@@ -4,6 +4,8 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import Link from "next/link";
+import Image from "next/image";
+import { useTheme } from "@/components/ThemeProvider";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -539,53 +541,167 @@ function MesajlarContent() {
     0
   );
 
-  if (loading) {
+  const { darkMode, toggleTheme, themeReady } = useTheme();
+
+  const palette = darkMode
+    ? {
+        page: "#15121D",
+        text: "#F5EFFB",
+        muted: "#B8AEC6",
+        card: "rgba(32, 27, 41, 0.94)",
+        cardSolid: "#201B29",
+        border: "rgba(255,255,255,0.12)",
+        soft: "#2A2235",
+        softHover: "#30263D",
+        accent: "#A184D5",
+        accentText: "#D9C9F0",
+        input: "#191521",
+        incoming: "#201B29",
+        outgoing: "#493567",
+      }
+    : {
+        page: "#FAF8FC",
+        text: "#302542",
+        muted: "#82778F",
+        card: "rgba(255,255,255,0.94)",
+        cardSolid: "#FFFFFF",
+        border: "#ECE5F3",
+        soft: "#F0E7F8",
+        softHover: "#F7F2FC",
+        accent: "#8060AE",
+        accentText: "#624B82",
+        input: "#FCFAFE",
+        incoming: "#FFFFFF",
+        outgoing: "#302542",
+      };
+
+  const iconPath = (name: string) => `/images/icons/${name}`;
+
+  if (loading || !themeReady) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#F7F5FC] text-[#655A76]">
-        Mesajların yükleniyor...
+      <main
+        className="flex min-h-screen items-center justify-center"
+        style={{
+          backgroundColor: palette.page,
+          color: palette.muted,
+          backgroundImage: `url("${darkMode ? "/images/brand/arkaplan1.png" : "/images/brand/arkaplan2.png"}")`,
+          backgroundPosition: "center",
+          backgroundSize: "cover",
+        }}
+      >
+        <div
+          className="flex flex-col items-center gap-4 rounded-3xl border px-8 py-7 shadow-xl backdrop-blur-xl"
+          style={{ backgroundColor: palette.card, borderColor: palette.border }}
+        >
+          <span className="h-9 w-9 animate-spin rounded-full border-4 border-[#A184D5]/25 border-t-[#A184D5]" />
+          <span className="text-sm font-semibold">Mesajların yükleniyor...</span>
+        </div>
       </main>
     );
   }
 
   if (!userId) {
     return (
-      <main className="min-h-screen bg-[#F7F5FC] px-4 py-16 text-[#30264A]">
-        <div className="mx-auto max-w-md rounded-3xl bg-white p-8 text-center shadow-sm">
-          <div className="text-5xl">✉️</div>
+      <main
+        className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-16"
+        style={{
+          backgroundColor: palette.page,
+          color: palette.text,
+          backgroundImage: `url("${darkMode ? "/images/brand/arkaplan1.png" : "/images/brand/arkaplan2.png"}")`,
+          backgroundPosition: "center",
+          backgroundSize: "cover",
+        }}
+      >
+        <div className="pointer-events-none absolute inset-0" style={{ backgroundColor: darkMode ? "rgba(21,18,29,.62)" : "rgba(250,248,252,.45)" }} />
+        <div
+          className="relative z-10 mx-auto w-full max-w-md rounded-3xl border p-8 text-center shadow-2xl backdrop-blur-xl"
+          style={{ backgroundColor: palette.card, borderColor: palette.border }}
+        >
+          <Image
+            src={iconPath(darkMode ? "kedi1.png" : "kedi2.png")}
+            alt=""
+            width={76}
+            height={76}
+            className="mx-auto object-contain"
+          />
           <h1 className="mt-4 text-2xl font-black">Mesajların</h1>
-          <p className="mt-3 text-sm leading-6 text-[#777080]">
-            Mesajlarını görüntülemek ve yeni mesaj göndermek için hesabına
-            giriş yap.
+          <p className="mt-3 text-sm leading-6" style={{ color: palette.muted }}>
+            Mesajlarını görüntülemek ve yeni mesaj göndermek için hesabına giriş yap.
           </p>
           <Link
             href="/giris"
-            className="mt-6 inline-flex rounded-xl bg-[#30264A] px-5 py-3 font-bold text-white"
+            className="mt-6 inline-flex rounded-xl px-5 py-3 font-bold text-white transition hover:opacity-90"
+            style={{ backgroundColor: palette.accent }}
           >
             Giriş yap
           </Link>
-          {error && (
-            <p className="mt-4 text-sm text-red-600">{error}</p>
-          )}
+          {error && <p className="mt-4 text-sm text-red-500">{error}</p>}
         </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#F7F5FC] text-[#30264A]">
-      <header className="border-b border-[#EEE9F8] bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4">
-          <Link href="/" className="text-xl font-black tracking-tight">
-            🐈 CAT-<span className="text-[#A184D5]">ALOG</span>
+    <main
+      className="relative min-h-screen overflow-hidden"
+      style={{
+        backgroundColor: palette.page,
+        color: palette.text,
+        backgroundImage: `url("${darkMode ? "/images/brand/arkaplan1.png" : "/images/brand/arkaplan2.png"}")`,
+        backgroundPosition: "center",
+        backgroundSize: "cover",
+        backgroundAttachment: "fixed",
+      }}
+    >
+      <div
+        className="pointer-events-none fixed inset-0"
+        style={{ backgroundColor: darkMode ? "rgba(21,18,29,.64)" : "rgba(250,248,252,.48)" }}
+      />
+
+      <header
+        className="relative z-10 border-b backdrop-blur-xl"
+        style={{
+          backgroundColor: darkMode ? "rgba(32,27,41,.92)" : "rgba(255,255,255,.92)",
+          borderColor: palette.border,
+        }}
+      >
+        <div className="relative mx-auto flex h-[144px] max-w-7xl items-center justify-between gap-3 px-4 sm:py-0">
+          <Link href="/" aria-label="CATalog ana sayfası" className="relative flex h-full w-[120px] shrink-0 items-center gap-2 transition hover:opacity-80">
+            <Image
+              src={darkMode ? "/images/brand/logo1.png" : "/images/brand/logo2.png"}
+              alt="CATalog"
+              width={240}
+              height={240}
+              className="absolute left-1/2 top-1/2 h-[240px] w-[240px] max-w-none -translate-x-1/2 -translate-y-1/2 object-contain"
+            />
           </Link>
 
-          <div className="flex items-center gap-3">
-            <span className="rounded-full bg-[#F0E7FA] px-3 py-1.5 text-xs font-bold text-[#624B82]">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <span
+              className="rounded-full px-3 py-1.5 text-xs font-bold"
+              style={{ backgroundColor: palette.soft, color: palette.accentText }}
+            >
               {unreadTotal} okunmamış
             </span>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              aria-label={darkMode ? "Gündüz temasına geç" : "Gece temasına geç"}
+              className="flex h-[72px] w-[72px] items-center justify-center rounded-2xl transition hover:scale-105"
+              style={{ backgroundColor: palette.soft }}
+            >
+              <Image
+                src={iconPath(darkMode ? "gece.png" : "gündüz.png")}
+                alt={darkMode ? "Gece teması" : "Gündüz teması"}
+                width={43}
+                height={43}
+                className="object-contain"
+              />
+            </button>
             <Link
               href="/"
-              className="rounded-xl px-3 py-2 text-sm font-semibold text-[#655A76] hover:bg-[#F7F5FC]"
+              className="rounded-xl px-3 py-2 text-sm font-semibold transition"
+              style={{ color: palette.muted, backgroundColor: "transparent" }}
             >
               ← İlanlar
             </Link>
@@ -593,29 +709,31 @@ function MesajlarContent() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-7xl px-3 py-5 sm:px-5 sm:py-8">
-        <div className="grid min-h-[75vh] overflow-hidden rounded-3xl border border-[#EEE9F8] bg-white shadow-sm lg:grid-cols-[340px_minmax(0,1fr)]">
+      <div className="relative z-10 mx-auto max-w-7xl px-3 py-5 sm:px-5 sm:py-8">
+        <div
+          className="grid min-h-[75vh] overflow-hidden rounded-3xl border shadow-2xl backdrop-blur-xl lg:grid-cols-[340px_minmax(0,1fr)]"
+          style={{ borderColor: palette.border, backgroundColor: palette.card }}
+        >
           <aside
-            className={`border-b border-[#EEE9F8] lg:border-b-0 lg:border-r ${
-              selectedUser && selectedCat ? "hidden lg:block" : ""
-            }`}
+            className={`border-b lg:border-b-0 lg:border-r ${selectedUser && selectedCat ? "hidden lg:block" : ""}`}
+            style={{ borderColor: palette.border }}
           >
-            <div className="border-b border-[#F0EAF6] p-5">
+            <div className="border-b p-5" style={{ borderColor: palette.border }}>
               <h1 className="text-2xl font-black">Mesajlar</h1>
-              <p className="mt-1 text-sm text-[#777080]">
-                İlan sahipleriyle konuşmaların
-              </p>
+              <p className="mt-1 text-sm" style={{ color: palette.muted }}>İlan sahipleriyle konuşmaların</p>
             </div>
 
             {conversations.length === 0 ? (
               <div className="p-6 text-center">
-                <div className="text-4xl">🐈</div>
-                <p className="mt-3 font-bold">
-                  {selectedUser && selectedCat
-                    ? "Yeni konuşman"
-                    : "Henüz sohbetin yok"}
-                </p>
-                <p className="mt-2 text-sm leading-6 text-[#777080]">
+                <Image
+                  src={iconPath(darkMode ? "kedi1.png" : "kedi2.png")}
+                  alt=""
+                  width={64}
+                  height={64}
+                  className="mx-auto object-contain"
+                />
+                <p className="mt-3 font-bold">{selectedUser && selectedCat ? "Yeni konuşman" : "Henüz sohbetin yok"}</p>
+                <p className="mt-2 text-sm leading-6" style={{ color: palette.muted }}>
                   {selectedUser && selectedCat
                     ? "İlk mesajını gönderdiğinde konuşman burada listelenecek."
                     : "Bir kedi ilanını açıp “Mesaj gönder” düğmesine basarak sohbet başlatabilirsin."}
@@ -623,70 +741,52 @@ function MesajlarContent() {
                 {!selectedUser && !selectedCat && (
                   <Link
                     href="/"
-                    className="mt-5 inline-flex rounded-xl bg-[#30264A] px-4 py-2.5 text-sm font-bold text-white"
+                    className="mt-5 inline-flex rounded-xl px-4 py-2.5 text-sm font-bold text-white transition hover:opacity-90"
+                    style={{ backgroundColor: palette.accent }}
                   >
                     İlanları keşfet
                   </Link>
                 )}
               </div>
             ) : (
-              <div className="divide-y divide-[#F4EFF8]">
+              <div>
                 {conversations.map((conversation) => {
                   const profile = profiles[conversation.userId];
                   const cat = cats[conversation.catId];
                   const last = conversation.lastMessage;
-                  const selected =
-                    conversation.userId === selectedUser &&
-                    conversation.catId === selectedCat;
-
+                  const selected = conversation.userId === selectedUser && conversation.catId === selectedCat;
                   return (
                     <button
                       key={`${conversation.userId}:${conversation.catId}`}
                       type="button"
                       onClick={() => selectConversation(conversation)}
-                      className={`flex w-full items-start gap-3 p-4 text-left transition hover:bg-[#FAF8FD] ${
-                        selected ? "bg-[#F5EFFB]" : ""
-                      }`}
+                      className="flex w-full items-start gap-3 border-b p-4 text-left transition"
+                      style={{
+                        borderColor: palette.border,
+                        backgroundColor: selected ? palette.soft : "transparent",
+                      }}
                     >
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#F0E7FA] text-xl">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl" style={{ backgroundColor: palette.soft }}>
                         {cat?.photo_urls?.[0] ? (
-                          <img
-                            src={cat.photo_urls[0]}
-                            alt={cat.name}
-                            className="h-full w-full object-cover"
-                          />
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={cat.photo_urls[0]} alt={cat.name} className="h-full w-full object-cover" />
                         ) : (
-                          "🐈"
+                          <Image src={iconPath(darkMode ? "kedi1.png" : "kedi2.png")} alt="Kedi fotoğrafı yok" width={36} height={36} className="object-contain p-1" />
                         )}
                       </div>
-
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
-                          <p className="truncate font-bold">
-                            {profile?.display_name?.trim() ||
-                              "İsimsiz kullanıcı"}
-                          </p>
-                          <span className="shrink-0 text-[11px] text-[#898293]">
-                            {formatDate(last.created_at)}
-                          </span>
+                          <p className="truncate font-bold">{profile?.display_name?.trim() || "İsimsiz kullanıcı"}</p>
+                          <span className="shrink-0 text-[11px]" style={{ color: palette.muted }}>{formatDate(last.created_at)}</span>
                         </div>
-
-                        <p className="mt-0.5 truncate text-xs text-[#9270C4]">
-                          {cat?.name || "Kedi ilanı"}
-                        </p>
-
-                        <p className="truncate text-xs text-[#777080]">
-                          {profile?.city?.trim() || "Şehir belirtilmemiş"}
-                        </p>
-
-                        <p className="mt-1 truncate text-sm text-[#777080]">
-                          {last.sender_id === userId ? "Sen: " : ""}
-                          {last.body}
+                        <p className="mt-0.5 truncate text-xs font-semibold" style={{ color: palette.accent }}>{cat?.name || "Kedi ilanı"}</p>
+                        <p className="truncate text-xs" style={{ color: palette.muted }}>{profile?.city?.trim() || "Şehir belirtilmemiş"}</p>
+                        <p className="mt-1 truncate text-sm" style={{ color: palette.muted }}>
+                          {last.sender_id === userId ? "Sen: " : ""}{last.body}
                         </p>
                       </div>
-
                       {conversation.unreadCount > 0 && (
-                        <span className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full bg-[#9270C4] px-1.5 text-xs font-bold text-white">
+                        <span className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full px-1.5 text-xs font-bold text-white" style={{ backgroundColor: palette.accent }}>
                           {conversation.unreadCount}
                         </span>
                       )}
@@ -697,23 +797,18 @@ function MesajlarContent() {
             )}
           </aside>
 
-          <section
-            className={`flex min-h-[75vh] min-w-0 flex-col ${
-              !selectedUser || !selectedCat ? "hidden lg:flex" : ""
-            }`}
-          >
+          <section className={`flex min-h-[75vh] min-w-0 flex-col ${!selectedUser || !selectedCat ? "hidden lg:flex" : ""}`}>
             {!selectedUser || !selectedCat ? (
               <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
-                <div className="text-6xl">💬</div>
+                <Image src={iconPath(darkMode ? "kedi1.png" : "kedi2.png")} alt="" width={88} height={88} className="object-contain" />
                 <h2 className="mt-4 text-xl font-black">Mesajların</h2>
-                <p className="mt-2 max-w-sm text-sm leading-6 text-[#777080]">
-                  Soldaki konuşmalardan birini seçebilir veya bir kedi
-                  ilanından “Mesaj gönder” düğmesine basabilirsin.
+                <p className="mt-2 max-w-sm text-sm leading-6" style={{ color: palette.muted }}>
+                  Soldaki konuşmalardan birini seçebilir veya bir kedi ilanından “Mesaj gönder” düğmesine basabilirsin.
                 </p>
               </div>
             ) : (
               <>
-                <div className="flex items-center gap-3 border-b border-[#EEE9F8] p-4 sm:p-5">
+                <div className="flex items-center gap-3 border-b p-4 sm:p-5" style={{ borderColor: palette.border }}>
                   <button
                     type="button"
                     onClick={() => {
@@ -724,92 +819,67 @@ function MesajlarContent() {
                       setNotice("");
                       window.history.replaceState(null, "", "/mesajlar");
                     }}
-                    className="rounded-lg px-2 py-1 text-sm text-[#655A76] hover:bg-[#F7F5FC] lg:hidden"
+                    className="rounded-lg px-2 py-1 text-sm transition lg:hidden"
+                    style={{ color: palette.muted, backgroundColor: palette.soft }}
+                    aria-label="Konuşma listesine dön"
                   >
                     ←
                   </button>
-
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#F0E7FA] text-xl">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full" style={{ backgroundColor: palette.soft }}>
                     {activeProfile?.avatar_url ? (
-                      <img
-                        src={activeProfile.avatar_url}
-                        alt=""
-                        className="h-full w-full object-cover"
-                      />
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={activeProfile.avatar_url} alt="" className="h-full w-full object-cover" />
                     ) : (
-                      "👤"
+                      <Image src={iconPath(darkMode ? "user ikonu.png" : "user ikonu2.png")} alt="Profil fotoğrafı yok" width={40} height={40} className="object-contain p-1" />
                     )}
                   </div>
-
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-black">
-                      {activeProfile?.display_name?.trim() ||
-                        "İsimsiz kullanıcı"}
-                    </p>
-                    <p className="truncate text-xs text-[#777080]">
-                      {activeProfile?.city?.trim() ||
-                        "Şehir belirtilmemiş"}
-                    </p>
+                    <p className="truncate font-black">{activeProfile?.display_name?.trim() || "İsimsiz kullanıcı"}</p>
+                    <p className="truncate text-xs" style={{ color: palette.muted }}>{activeProfile?.city?.trim() || "Şehir belirtilmemiş"}</p>
                   </div>
-
                   <button
                     type="button"
                     onClick={() => void toggleBlock()}
                     disabled={blockBusy || isSelfConversation}
-                    className="rounded-xl border border-[#E3D7F0] px-3 py-2 text-xs font-bold text-[#624B82] transition hover:bg-[#F8F5FC] disabled:opacity-50"
+                    className="rounded-xl border px-3 py-2 text-xs font-bold transition disabled:opacity-50"
+                    style={{ borderColor: palette.border, color: palette.accentText, backgroundColor: palette.soft }}
                   >
-                    {blockBusy
-                      ? "Bekle..."
-                      : blockedByMe
-                        ? "Engeli kaldır"
-                        : "Engelle"}
+                    {blockBusy ? "Bekle..." : blockedByMe ? "Engeli kaldır" : "Engelle"}
                   </button>
                 </div>
 
                 {activeCat && (
                   <Link
                     href={`/kediler/${activeCat.id}`}
-                    className="flex items-center gap-3 border-b border-[#F0EAF6] bg-[#FCFAFE] px-4 py-3 hover:bg-[#F7F2FC]"
+                    className="flex items-center gap-3 border-b px-4 py-3 transition"
+                    style={{ borderColor: palette.border, backgroundColor: darkMode ? "rgba(42,34,53,.78)" : "rgba(252,250,254,.9)" }}
                   >
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#F0E7FA]">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl" style={{ backgroundColor: palette.soft }}>
                       {activeCat.photo_urls?.[0] ? (
-                        <img
-                          src={activeCat.photo_urls[0]}
-                          alt={activeCat.name}
-                          className="h-full w-full object-cover"
-                        />
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={activeCat.photo_urls[0]} alt={activeCat.name} className="h-full w-full object-cover" />
                       ) : (
-                        "🐈"
+                        <Image src={iconPath(darkMode ? "kedi1.png" : "kedi2.png")} alt="Kedi fotoğrafı yok" width={34} height={34} className="object-contain p-1" />
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs text-[#898293]">
-                        İlan hakkında konuşuyorsunuz
-                      </p>
-                      <p className="truncate text-sm font-bold">
-                        {activeCat.name}
-                      </p>
+                      <p className="text-xs" style={{ color: palette.muted }}>İlan hakkında konuşuyorsunuz</p>
+                      <p className="truncate text-sm font-bold">{activeCat.name}</p>
                     </div>
-                    <span className="text-xs font-bold text-[#9270C4]">
-                      İlanı gör →
-                    </span>
+                    <span className="text-xs font-bold" style={{ color: palette.accent }}>İlanı gör →</span>
                   </Link>
                 )}
 
-                <div className="flex-1 space-y-4 overflow-y-auto bg-[#FCFBFE] p-4 sm:p-6">
+                <div
+                  className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6"
+                  style={{ backgroundColor: darkMode ? "rgba(21,18,29,.38)" : "rgba(252,250,254,.72)" }}
+                >
                   {activeMessages.length === 0 && (
-                    <div className="mx-auto mt-10 max-w-md rounded-3xl border border-[#EEE9F8] bg-white p-8 text-center shadow-sm">
-                      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[#F0E7FA] text-3xl">
-                        💬
-                      </div>
-                      <h2 className="mt-4 text-xl font-black">
-                        {activeCat
-                          ? `${activeCat.name} hakkında konuş`
-                          : "Yeni konuşma"}
-                      </h2>
-                      <p className="mt-2 text-sm leading-6 text-[#777080]">
-                        Henüz mesaj yok. Aşağıdaki alana mesajını yazıp
-                        gönderebilirsin.
+                    <div className="mx-auto mt-10 max-w-md rounded-3xl border p-8 text-center shadow-sm backdrop-blur-sm" style={{ borderColor: palette.border, backgroundColor: palette.card }}>
+                      <Image src={iconPath(darkMode ? "kedi1.png" : "kedi2.png")} alt="" width={64} height={64} className="mx-auto object-contain" />
+                      <h2 className="mt-4 text-xl font-black">{activeCat ? `${activeCat.name} hakkında konuş` : "Yeni konuşma"}</h2>
+                      <p className="mt-2 text-sm leading-6" style={{ color: palette.muted }}>
+                        Henüz mesaj yok. Aşağıdaki alana mesajını yazıp gönderebilirsin.
                       </p>
                     </div>
                   )}
@@ -817,83 +887,46 @@ function MesajlarContent() {
                   {activeMessages.map((message, index) => {
                     const mine = message.sender_id === userId;
                     const previous = activeMessages[index - 1];
-                    const showDate =
-                      !previous ||
-                      new Date(previous.created_at).toDateString() !==
-                        new Date(message.created_at).toDateString();
+                    const showDate = !previous || new Date(previous.created_at).toDateString() !== new Date(message.created_at).toDateString();
+                    const tickIcon = message.read_at
+                      ? (darkMode ? "mavitik.png" : "mavitik2.png")
+                      : message.delivered_at
+                        ? (darkMode ? "çifttik.png" : "çifttik2.png")
+                        : (darkMode ? "tektik.png" : "tektik2.png");
+                    const tickLabel = message.read_at ? "Okundu" : message.delivered_at ? "Teslim edildi" : "Gönderildi";
 
                     return (
                       <div key={message.id}>
                         {showDate && (
                           <div className="my-4 text-center">
-                            <span className="rounded-full bg-[#F0EAF6] px-3 py-1 text-[11px] font-semibold text-[#777080]">
-                              {new Date(message.created_at).toLocaleDateString(
-                                "tr-TR",
-                                {
-                                  day: "numeric",
-                                  month: "long",
-                                  year: "numeric",
-                                }
-                              )}
+                            <span className="rounded-full border px-3 py-1 text-[11px] font-semibold shadow-sm" style={{ borderColor: palette.border, backgroundColor: palette.card, color: palette.muted }}>
+                              {new Date(message.created_at).toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" })}
                             </span>
                           </div>
                         )}
-
-                        <div
-                          className={`flex ${
-                            mine ? "justify-end" : "justify-start"
-                          }`}
-                        >
+                        <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                           <div
-                            className={`max-w-[85%] break-words rounded-2xl px-4 py-3 shadow-sm sm:max-w-[75%] ${
-                              mine
-                                ? "rounded-br-md bg-[#30264A] text-white"
-                                : "rounded-bl-md border border-[#EEE9F8] bg-white text-[#30264A]"
-                            }`}
+                            className="max-w-[85%] break-words rounded-2xl px-4 py-3 shadow-sm sm:max-w-[75%]"
+                            style={{
+                              borderBottomRightRadius: mine ? 5 : 18,
+                              borderBottomLeftRadius: mine ? 18 : 5,
+                              backgroundColor: mine ? palette.outgoing : palette.incoming,
+                              color: mine ? "#FFFFFF" : palette.text,
+                              border: mine ? "1px solid transparent" : `1px solid ${palette.border}`,
+                            }}
                           >
-                            <p className="whitespace-pre-wrap text-sm leading-6">
-                              {message.body}
-                            </p>
-
-                            <div
-                              className={`mt-1.5 flex items-center justify-end gap-1.5 text-[10px] ${
-                                mine
-                                  ? "text-[#D9CDEB]"
-                                  : "text-[#898293]"
-                              }`}
-                            >
+                            <p className="whitespace-pre-wrap text-sm leading-6">{message.body}</p>
+                            <div className="mt-1.5 flex items-center justify-end gap-1.5 text-[10px]" style={{ color: mine ? "#D9CDEB" : palette.muted }}>
                               <span>{formatTime(message.created_at)}</span>
-
                               {mine && (
-                                <span
-                                  title={
-                                    message.read_at
-                                      ? "Okundu"
-                                      : message.delivered_at
-                                        ? "Teslim edildi"
-                                        : "Gönderildi"
-                                  }
-                                  aria-label={
-                                    message.read_at
-                                      ? "Okundu"
-                                      : message.delivered_at
-                                        ? "Teslim edildi"
-                                        : "Gönderildi"
-                                  }
-                                  className={`text-xs font-black ${
-                                    message.read_at
-                                      ? "text-sky-300"
-                                      : message.delivered_at
-                                        ? "text-[#D9CDEB]"
-                                        : "text-[#B8A9CC]"
-                                  }`}
-                                >
-                                  {message.read_at
-                                    ? "✓✓"
-                                    : message.delivered_at
-                                      ? "✓✓"
-                                      : "✓"}
-                                </span>
+                                <Image
+                                  src={iconPath(tickIcon)}
+                                  alt={tickLabel}
+                                  title={tickLabel}
+                                  width={20}
+                                  height={14}
+                                  className="h-3.5 w-5 object-contain"
+                                />
                               )}
                             </div>
                           </div>
@@ -904,69 +937,40 @@ function MesajlarContent() {
                 </div>
 
                 {isSelfConversation && (
-                  <p className="border-t border-amber-100 bg-amber-50 px-4 py-2 text-sm text-amber-800">
-                    Bu ilan senin hesabına ait. Kendine mesaj gönderemezsin.
-                    Mesajlaşmayı başka bir kullanıcı hesabıyla test et.
+                  <p className="border-t px-4 py-2 text-sm" style={{ borderColor: "#D97706", backgroundColor: darkMode ? "#382719" : "#FFFBEB", color: darkMode ? "#FCD9A5" : "#92400E" }}>
+                    Bu ilan senin hesabına ait. Kendine mesaj gönderemezsin. Mesajlaşmayı başka bir kullanıcı hesabıyla test et.
                   </p>
                 )}
-
                 {blockedByMe && !isSelfConversation && (
-                  <p className="border-t border-[#EEE9F8] bg-[#FCFAFE] px-4 py-2 text-sm text-[#777080]">
-                    Bu kullanıcıyı engelledin. Mesaj göndermek için önce
-                    engeli kaldır.
+                  <p className="border-t px-4 py-2 text-sm" style={{ borderColor: palette.border, backgroundColor: palette.soft, color: palette.muted }}>
+                    Bu kullanıcıyı engelledin. Mesaj göndermek için önce engeli kaldır.
                   </p>
                 )}
+                {error && <p className="border-t border-red-400/30 bg-red-500/10 px-4 py-2 text-sm text-red-500">{error}</p>}
+                {notice && <p className="border-t px-4 py-2 text-sm" style={{ borderColor: palette.border, backgroundColor: palette.soft, color: palette.accentText }}>{notice}</p>}
 
-                {error && (
-                  <p className="border-t border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700">
-                    {error}
-                  </p>
-                )}
-
-                {notice && (
-                  <p className="border-t border-[#E6DDF2] bg-[#F8F4FC] px-4 py-2 text-sm text-[#624B82]">
-                    {notice}
-                  </p>
-                )}
-
-                <form
-                  onSubmit={sendMessage}
-                  className="border-t border-[#EEE9F8] bg-white p-3 sm:p-4"
-                >
+                <form onSubmit={sendMessage} className="border-t p-3 sm:p-4" style={{ borderColor: palette.border, backgroundColor: palette.cardSolid }}>
                   <div className="flex items-end gap-2">
                     <textarea
                       value={draft}
                       onChange={(event) => setDraft(event.target.value)}
-                      placeholder={
-                        isSelfConversation
-                          ? "Kendi hesabına mesaj gönderemezsin"
-                          : blockedByMe
-                            ? "Mesaj göndermek için engeli kaldır"
-                            : "Mesajını yaz..."
-                      }
+                      placeholder={isSelfConversation ? "Kendi hesabına mesaj gönderemezsin" : blockedByMe ? "Mesaj göndermek için engeli kaldır" : "Mesajını yaz..."}
                       rows={2}
                       maxLength={4000}
-                      disabled={
-                        sending || blockedByMe || isSelfConversation
-                      }
-                      className="max-h-36 min-h-12 flex-1 resize-y rounded-2xl border border-[#E3D7F0] bg-[#FCFBFE] px-4 py-3 text-sm outline-none transition placeholder:text-[#A19AAA] focus:border-[#A184D5] disabled:opacity-60"
+                      disabled={sending || blockedByMe || isSelfConversation}
+                      className="max-h-36 min-h-12 flex-1 resize-y rounded-2xl border px-4 py-3 text-sm outline-none transition placeholder:text-[#A19AAA] focus:border-[#A184D5] disabled:opacity-60"
+                      style={{ borderColor: palette.border, backgroundColor: palette.input, color: palette.text }}
                     />
-
                     <button
                       type="submit"
-                      disabled={
-                        sending ||
-                        blockedByMe ||
-                        isSelfConversation ||
-                        !draft.trim()
-                      }
-                      className="min-h-12 rounded-2xl bg-[#30264A] px-4 py-3 text-sm font-bold text-white transition hover:bg-[#51416E] disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={sending || blockedByMe || isSelfConversation || !draft.trim()}
+                      className="min-h-12 rounded-2xl px-4 py-3 text-sm font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                      style={{ backgroundColor: palette.accent }}
                     >
                       {sending ? "Gönderiliyor..." : "Gönder"}
                     </button>
                   </div>
-
-                  <p className="mt-2 text-[11px] text-[#898293]">
+                  <p className="mt-2 text-[11px]" style={{ color: palette.muted }}>
                     Mesajların bu ilanla ilişkili olarak kaydedilir.
                   </p>
                 </form>
