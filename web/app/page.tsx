@@ -692,17 +692,17 @@ export default function Home() {
         <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#A184D5] sm:text-sm">
-              CAT-ALOG keşfet
+              
             </p>
             <h2 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl">
-              Yuva arayan kediler
+              
             </h2>
             <p
               className={`mt-2 text-sm ${
                 darkMode ? "text-[#D0C4DA]" : "text-[#8B8196]"
               }`}
             >
-              Yeni dostunu bulmak için ilanlara göz at.
+              
             </p>
           </div>
 
