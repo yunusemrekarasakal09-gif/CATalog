@@ -43,6 +43,7 @@ export default function ProfilPage() {
   const [cats, setCats] = useState<Cat[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [deletingCatId, setDeletingCatId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -109,6 +110,48 @@ export default function ProfilPage() {
       cancelled = true;
     };
   }, [router]);
+
+  async function handleRemoveCat(cat: Cat) {
+    const confirmed = window.confirm(
+      `“${cat.name}” ilanını kaldırmak istediğine emin misin? İlan artık aktif ilanlarda görünmeyecek.`
+    );
+
+    if (!confirmed) return;
+
+    setDeletingCatId(cat.id);
+    setError("");
+
+    try {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        setError("İlanı kaldırmak için tekrar giriş yapmalısın.");
+        return;
+      }
+
+      const { error: updateError } = await supabase
+        .from("cats")
+        .update({ is_active: false })
+        .eq("id", cat.id)
+        .eq("owner_id", user.id);
+
+      if (updateError) {
+        console.error("İlan kaldırılamadı:", updateError);
+        setError("İlan kaldırılamadı. Veritabanı izinlerini kontrol etmek gerekebilir.");
+        return;
+      }
+
+      setCats((currentCats) => currentCats.filter((item) => item.id !== cat.id));
+    } catch (removeError) {
+      console.error("İlan kaldırılırken beklenmeyen hata:", removeError);
+      setError("İlan kaldırılırken beklenmeyen bir hata oluştu.");
+    } finally {
+      setDeletingCatId(null);
+    }
+  }
 
   if (loading || !themeReady) {
     return (
@@ -287,6 +330,32 @@ export default function ProfilPage() {
                   key={cat.id}
                   className="overflow-hidden rounded-3xl border border-[#EDE5F5] bg-white shadow-sm"
                 >
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveCat(cat)}
+                    disabled={deletingCatId === cat.id}
+                    className="flex w-full items-center justify-center gap-3 border-b px-5 py-4 transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60 sm:py-5"
+                    style={{
+                      borderColor: palette.border,
+                      backgroundColor: darkMode ? "rgba(65,42,75,0.96)" : "#FFF1F5",
+                      color: darkMode ? "#F3D5E8" : "#8C4267",
+                    }}
+                    aria-label={`${cat.name} ilanını kaldır`}
+                  >
+                    <Image
+                      src={darkMode ? "/images/icons/ilanıkaldır.png" : "/images/icons/ilanıkaldır2.png"}
+                      alt=""
+                      width={52}
+                      height={52}
+                      className="h-12 w-12 shrink-0 object-contain sm:h-14 sm:w-14"
+                    />
+                    <span
+                      className="text-lg font-bold tracking-normal sm:text-xl"
+                      style={{ fontFamily: "inherit" }}
+                    >
+                      {deletingCatId === cat.id ? "KALDIRILIYOR..." : "İLANI KALDIR"}
+                    </span>
+                  </button>
                   <Link href={`/kediler/${cat.id}`} className="block">
                     <div className="aspect-[4/3] overflow-hidden bg-[#F3ECFA]">
                       {cat.photo_urls?.[0] ? (

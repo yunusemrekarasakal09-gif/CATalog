@@ -1,7 +1,7 @@
 
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -92,6 +92,11 @@ function MesajlarContent() {
   const [notice, setNotice] = useState("");
   const [blockedByMe, setBlockedByMe] = useState(false);
   const [blockBusy, setBlockBusy] = useState(false);
+  const [peerOnline, setPeerOnline] = useState(false);
+  const [peerTyping, setPeerTyping] = useState(false);
+  const liveChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingActiveRef = useRef(false);
 
   const loadMessages = useCallback(
     async (currentUserId: string) => {
@@ -299,6 +304,17 @@ function MesajlarContent() {
               return;
             }
 
+            if (
+              payload.eventType === "INSERT" &&
+              row.recipient_id === currentUserId &&
+              row.sender_id !== currentUserId
+            ) {
+              const audio = new Audio("/sounds/mesaj%20geldi.mp3");
+              void audio.play().catch((soundError) => {
+                console.warn("Mesaj sesi çalınamadı:", soundError);
+              });
+            }
+
             await loadMessages(currentUserId);
 
             if (
@@ -325,6 +341,84 @@ function MesajlarContent() {
       }
     };
   }, [loadMessages, markDelivered, requestedUser, requestedCat]);
+
+  useEffect(() => {
+    if (!userId || !selectedUser || userId === selectedUser) {
+      setPeerOnline(false);
+      setPeerTyping(false);
+      liveChannelRef.current = null;
+      return;
+    }
+
+    let cancelled = false;
+    const pair = [userId, selectedUser].sort().join("-");
+    const channel = supabase.channel(`chat-live-${pair}`, {
+      config: {
+        presence: { key: userId },
+        broadcast: { self: false },
+      },
+    });
+    liveChannelRef.current = channel;
+
+    channel
+      .on("presence", { event: "sync" }, () => {
+        if (cancelled) return;
+        const presence = channel.presenceState();
+        setPeerOnline(Boolean(presence[selectedUser]?.length));
+      })
+      .on("broadcast", { event: "typing" }, ({ payload }) => {
+        if (cancelled || payload?.user_id !== selectedUser) return;
+        setPeerTyping(Boolean(payload.is_typing));
+      })
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED" && !cancelled) {
+          await channel.track({
+            user_id: userId,
+            online_at: new Date().toISOString(),
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+      typingActiveRef.current = false;
+      setPeerTyping(false);
+      if (liveChannelRef.current === channel) liveChannelRef.current = null;
+      void supabase.removeChannel(channel);
+    };
+  }, [userId, selectedUser]);
+
+  function handleDraftChange(value: string) {
+    setDraft(value);
+
+    if (!userId || !selectedUser || userId === selectedUser) return;
+    const channel = liveChannelRef.current;
+    if (channel && !typingActiveRef.current) {
+      typingActiveRef.current = true;
+      void channel.send({
+        type: "broadcast",
+        event: "typing",
+        payload: { user_id: userId, is_typing: true },
+      });
+    }
+
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      typingActiveRef.current = false;
+      const activeChannel = liveChannelRef.current;
+      if (activeChannel) {
+        void activeChannel.send({
+          type: "broadcast",
+          event: "typing",
+          payload: { user_id: userId, is_typing: false },
+        });
+      }
+    }, 1400);
+  }
 
   const conversations = useMemo(() => {
     const map = new Map<string, Conversation>();
@@ -475,7 +569,25 @@ function MesajlarContent() {
       return;
     }
 
+    // Mesaj başarıyla gönderildiğinde gönderici tarafında sesi çal.
+    const sentAudio = new Audio("/sounds/message.mp3");
+    void sentAudio.play().catch((soundError) => {
+      console.warn("Gönderilen mesaj sesi çalınamadı:", soundError);
+    });
+
     setDraft("");
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+    typingActiveRef.current = false;
+    if (liveChannelRef.current) {
+      void liveChannelRef.current.send({
+        type: "broadcast",
+        event: "typing",
+        payload: { user_id: userId, is_typing: false },
+      });
+    }
     await loadMessages(userId);
   }
 
@@ -836,6 +948,10 @@ function MesajlarContent() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-black">{activeProfile?.display_name?.trim() || "İsimsiz kullanıcı"}</p>
                     <p className="truncate text-xs" style={{ color: palette.muted }}>{activeProfile?.city?.trim() || "Şehir belirtilmemiş"}</p>
+                    <p className="mt-0.5 flex items-center gap-1.5 text-xs" style={{ color: peerOnline ? "#16A34A" : palette.muted }}>
+                      <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: peerOnline ? "#22C55E" : "#9CA3AF" }} />
+                      {peerTyping ? "Yazıyor..." : peerOnline ? "Çevrimiçi" : "Çevrimdışı"}
+                    </p>
                   </div>
                   <button
                     type="button"
@@ -934,6 +1050,18 @@ function MesajlarContent() {
                       </div>
                     );
                   })}
+                  {peerTyping && (
+                    <div className="flex justify-start" aria-live="polite" aria-label="Karşı taraf yazıyor">
+                      <div
+                        className="flex items-center gap-2 rounded-2xl border px-3 py-2 shadow-sm"
+                        style={{ backgroundColor: palette.incoming, borderColor: palette.border }}
+                      >
+                        {/* Public GIF is intentionally rendered with img to preserve animation. */}
+                        <img src="/animation/mesaj.gif" alt="Karşı taraf yazıyor" className="h-8 w-12 object-contain" />
+                        <span className="text-xs" style={{ color: palette.muted }}>Yazıyor...</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {isSelfConversation && (
@@ -953,7 +1081,7 @@ function MesajlarContent() {
                   <div className="flex items-end gap-2">
                     <textarea
                       value={draft}
-                      onChange={(event) => setDraft(event.target.value)}
+                      onChange={(event) => handleDraftChange(event.target.value)}
                       placeholder={isSelfConversation ? "Kendi hesabına mesaj gönderemezsin" : blockedByMe ? "Mesaj göndermek için engeli kaldır" : "Mesajını yaz..."}
                       rows={2}
                       maxLength={4000}
