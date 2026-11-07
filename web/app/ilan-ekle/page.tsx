@@ -1,7 +1,7 @@
 
 "use client";
 
-import { ChangeEvent, FormEvent, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useTheme } from "@/components/ThemeProvider";
 
@@ -40,6 +40,64 @@ const catBreeds = [
   "Diğer",
 ];
 
+
+const catColors = [
+  "Beyaz",
+  "Siyah",
+  "Gri",
+  "Mavi",
+  "Krem",
+  "Sarı",
+  "Turuncu",
+  "Kahverengi",
+  "Çikolata",
+  "Tarçın",
+  "Kızıl",
+  "Tekir",
+  "Gümüş",
+  "Duman",
+  "Alacalı",
+  "Üç renkli",
+  "Siyah-beyaz",
+  "Gri-beyaz",
+  "Sarı-beyaz",
+  "Turuncu-beyaz",
+  "Kahverengi-beyaz",
+  "Diğer",
+];
+
+const catAges = [
+  { value: "0", label: "Yeni doğmuş" },
+  { value: "0.25", label: "3 aylık" },
+  { value: "0.5", label: "6 aylık" },
+  { value: "0.75", label: "9 aylık" },
+  ...Array.from({ length: 20 }, (_, index) => ({
+    value: String(index + 1),
+    label: `${index + 1} yaş`,
+  })),
+];
+
+const TURKEY_PROVINCES = [
+  "Adana", "Adıyaman", "Afyonkarahisar", "Ağrı", "Amasya", "Ankara", "Antalya",
+  "Artvin", "Aydın", "Balıkesir", "Bilecik", "Bingöl", "Bitlis", "Bolu",
+  "Burdur", "Bursa", "Çanakkale", "Çankırı", "Çorum", "Denizli", "Diyarbakır",
+  "Edirne", "Elazığ", "Erzincan", "Erzurum", "Eskişehir", "Gaziantep", "Giresun",
+  "Gümüşhane", "Hakkâri", "Hatay", "Isparta", "Mersin", "İstanbul", "İzmir",
+  "Kars", "Kastamonu", "Kayseri", "Kırklareli", "Kırşehir", "Kocaeli", "Konya",
+  "Kütahya", "Malatya", "Manisa", "Kahramanmaraş", "Mardin", "Muğla", "Muş",
+  "Nevşehir", "Niğde", "Ordu", "Rize", "Sakarya", "Samsun", "Siirt", "Sinop",
+  "Sivas", "Tekirdağ", "Tokat", "Trabzon", "Tunceli", "Şanlıurfa", "Uşak",
+  "Van", "Yozgat", "Zonguldak", "Aksaray", "Bayburt", "Karaman", "Kırıkkale",
+  "Batman", "Şırnak", "Bartın", "Ardahan", "Iğdır", "Yalova", "Karabük",
+  "Kilis", "Osmaniye", "Düzce",
+];
+
+type ProvinceData = {
+  id: number;
+  name: string;
+  districts: string[];
+};
+
 const MAX_PHOTOS = 8;
 const MIN_PHOTOS = 2;
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -54,6 +112,12 @@ export default function IlanEklePage() {
   const [gender, setGender] = useState("");
   const [color, setColor] = useState("");
   const [city, setCity] = useState("");
+  const [district, setDistrict] = useState("");
+  const [provinces, setProvinces] = useState<ProvinceData[]>(
+    TURKEY_PROVINCES.map((name, index) => ({ id: index + 1, name, districts: [] }))
+  );
+  const [districtsLoading, setDistrictsLoading] = useState(true);
+  const [districtsError, setDistrictsError] = useState("");
   const [description, setDescription] = useState("");
   const [phone, setPhone] = useState("");
   const [pedigree, setPedigree] = useState("");
@@ -63,6 +127,68 @@ export default function IlanEklePage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadProvinceDistricts() {
+      try {
+        setDistrictsLoading(true);
+        setDistrictsError("");
+
+        const [provinceResponse, districtResponse] = await Promise.all([
+          fetch("https://api.turkiyeapi.dev/v2/provinces?limit=100&fields=id,name", {
+            signal: controller.signal,
+          }),
+          fetch("https://api.turkiyeapi.dev/v2/districts?limit=1000&fields=id,name,provinceId", {
+            signal: controller.signal,
+          }),
+        ]);
+
+        if (!provinceResponse.ok || !districtResponse.ok) {
+          throw new Error("İl ve ilçe listesi şu anda yüklenemiyor.");
+        }
+
+        const [provinceResult, districtResult] = await Promise.all([
+          provinceResponse.json(),
+          districtResponse.json(),
+        ]);
+
+        const provinceRows = Array.isArray(provinceResult?.data) ? provinceResult.data : [];
+        const districtRows = Array.isArray(districtResult?.data) ? districtResult.data : [];
+
+        const loaded: ProvinceData[] = provinceRows.map(
+          (province: { id?: number; name?: string }) => ({
+            id: Number(province.id),
+            name: String(province.name ?? ""),
+            districts: districtRows
+              .filter((district: { provinceId?: number }) => Number(district.provinceId) === Number(province.id))
+              .map((district: { name?: string }) => String(district.name ?? ""))
+              .filter(Boolean)
+              .sort((a: string, b: string) => a.localeCompare(b, "tr")),
+          })
+        ).filter((province: ProvinceData) => province.id && province.name);
+
+        if (loaded.length !== 81 || loaded.every((province) => province.districts.length === 0)) {
+          throw new Error("İl ve ilçe verileri eksik geldi.");
+        }
+
+        setProvinces(loaded);
+      } catch (loadError) {
+        if (controller.signal.aborted) return;
+        console.error("İl ve ilçe listesi yüklenemedi:", loadError);
+        setDistrictsError("İlçe listesi yüklenemedi. Lütfen bağlantını kontrol edip sayfayı yenile.");
+      } finally {
+        if (!controller.signal.aborted) setDistrictsLoading(false);
+      }
+    }
+
+    void loadProvinceDistricts();
+    return () => controller.abort();
+  }, []);
+
+  const selectedProvince = provinces.find((province) => province.name === city);
+  const districtOptions = selectedProvince?.districts ?? [];
 
 
   const pageStyle = {
@@ -151,12 +277,27 @@ export default function IlanEklePage() {
     setError("");
     setMessage("");
 
-    if (!name.trim() || !breed || !age || !gender || !color.trim() || !city.trim()) {
+    if (!name.trim() || !breed || !age || !gender || !color || !city || !district) {
       setError("Lütfen zorunlu alanların tamamını doldur.");
       return;
     }
 
     const parsedAge = Number(age);
+
+    if (!catAges.some((option) => option.value === age)) {
+      setError("Lütfen listeden geçerli bir yaş seç.");
+      return;
+    }
+
+    if (!catColors.includes(color)) {
+      setError("Lütfen listeden geçerli bir renk seç.");
+      return;
+    }
+
+    if (!districtOptions.includes(district)) {
+      setError("Lütfen seçtiğin şehre ait bir ilçeyi listeden seç.");
+      return;
+    }
 
     if (!Number.isFinite(parsedAge) || parsedAge < 0 || parsedAge > 100) {
       setError("Lütfen geçerli bir yaş gir.");
@@ -236,7 +377,7 @@ export default function IlanEklePage() {
         age_years: parsedAge,
         gender,
         color: color.trim(),
-        city: city.trim(),
+        city: `${city}, ${district}`,
         description: description.trim(),
         photo_urls: photoUrls,
         pedigree: pedigree === "true",
@@ -256,6 +397,7 @@ export default function IlanEklePage() {
       setGender("");
       setColor("");
       setCity("");
+      setDistrict("");
       setDescription("");
       setPhone("");
       setPedigree("");
@@ -430,19 +572,21 @@ export default function IlanEklePage() {
                 <label className={labelClass} htmlFor="age">
                   Yaş (yıl) *
                 </label>
-                <input
+                <select
                   id="age"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.1"
                   className={fieldClass}
                   style={inputStyle}
                   value={age}
                   onChange={(e) => setAge(e.target.value)}
-                  placeholder="Örn. 2"
                   required
-                />
+                >
+                  <option value="">Yaş seç</option>
+                  {catAges.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className={sectionClass}>
@@ -467,32 +611,77 @@ export default function IlanEklePage() {
                 <label className={labelClass} htmlFor="color">
                   Renk *
                 </label>
-                <input
+                <select
                   id="color"
                   className={fieldClass}
                   style={inputStyle}
                   value={color}
                   onChange={(e) => setColor(e.target.value)}
-                  placeholder="Örn. Gri-beyaz"
-                  maxLength={60}
                   required
-                />
+                >
+                  <option value="">Renk seç</option>
+                  {catColors.map((catColor) => (
+                    <option key={catColor} value={catColor}>
+                      {catColor}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className={sectionClass + " sm:col-span-2"}>
-                <label className={labelClass} htmlFor="city">
+                <span className={labelClass}>
                   Şehir / İlçe *
-                </label>
-                <input
-                  id="city"
-                  className={fieldClass}
-                  style={inputStyle}
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  placeholder="Örn. Bursa, Nilüfer"
-                  maxLength={100}
-                  required
-                />
+                </span>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className={labelClass} htmlFor="city">Şehir *</label>
+                    <select
+                      id="city"
+                      className={fieldClass}
+                      style={inputStyle}
+                      value={city}
+                      onChange={(e) => {
+                        setCity(e.target.value);
+                        setDistrict("");
+                      }}
+                      required
+                    >
+                      <option value="">Şehir seç</option>
+                      {provinces.map((province) => (
+                        <option key={province.name} value={province.name}>
+                          {province.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass} htmlFor="district">İlçe *</label>
+                    <select
+                      id="district"
+                      className={fieldClass}
+                      style={inputStyle}
+                      value={district}
+                      onChange={(e) => setDistrict(e.target.value)}
+                      disabled={!city || districtsLoading || districtOptions.length === 0}
+                      required
+                    >
+                      <option value="">
+                        {!city ? "Önce şehir seç" : districtsLoading ? "İlçeler yükleniyor..." : "İlçe seç"}
+                      </option>
+                      {districtOptions.map((districtName) => (
+                        <option key={districtName} value={districtName}>
+                          {districtName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                {districtsError && (
+                  <p className="text-xs text-red-500" role="alert">{districtsError}</p>
+                )}
+                {city && !districtsLoading && districtOptions.length === 0 && !districtsError && (
+                  <p className="text-xs text-red-500">Bu şehir için ilçe listesi bulunamadı. Lütfen sayfayı yenile.</p>
+                )}
                 <p className="text-xs" style={{ color: mutedColor }}>
                   Güvenliğin için ilanında açık adres paylaşma.
                 </p>

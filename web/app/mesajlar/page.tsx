@@ -81,6 +81,7 @@ function MesajlarContent() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [profiles, setProfiles] = useState<Record<string, Profile>>({});
   const [cats, setCats] = useState<Record<string, CatInfo>>({});
+  const [removedCatIds, setRemovedCatIds] = useState<string[]>([]);
 
   const [selectedUser, setSelectedUser] = useState(requestedUser ?? "");
   const [selectedCat, setSelectedCat] = useState(requestedCat ?? "");
@@ -97,6 +98,7 @@ function MesajlarContent() {
   const liveChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingActiveRef = useRef(false);
+  const removedCleanupRef = useRef<Set<string>>(new Set());
 
   const loadMessages = useCallback(
     async (currentUserId: string) => {
@@ -169,15 +171,47 @@ function MesajlarContent() {
           .in("id", uniqueCatIds);
 
         if (!catError && catData) {
+          const availableCats = catData as CatInfo[];
+          const availableCatIds = new Set(availableCats.map((cat) => cat.id));
+          const missingCatIds = uniqueCatIds.filter((catId) => !availableCatIds.has(catId));
+
           setCats((previous) => {
             const next = { ...previous };
 
-            for (const cat of catData as CatInfo[]) {
+            for (const cat of availableCats) {
               next[cat.id] = cat;
+            }
+
+            for (const missingCatId of missingCatIds) {
+              delete next[missingCatId];
             }
 
             return next;
           });
+
+          if (missingCatIds.length > 0) {
+            setRemovedCatIds((previous) => [...new Set([...previous, ...missingCatIds])]);
+
+            // İlanı silinmiş konuşmaların mesajlarını veritabanından temizlemeyi dene.
+            // Bunun çalışması için aşağıdaki yanıttaki dar kapsamlı DELETE RLS politikası gerekir.
+            for (const missingCatId of missingCatIds) {
+              if (removedCleanupRef.current.has(missingCatId)) continue;
+              removedCleanupRef.current.add(missingCatId);
+
+              const { error: cleanupError } = await supabase
+                .from("messages")
+                .delete()
+                .eq("cat_id", missingCatId)
+                .or(`sender_id.eq.${currentUserId},recipient_id.eq.${currentUserId}`);
+
+              if (cleanupError) {
+                removedCleanupRef.current.delete(missingCatId);
+                console.error("Kaldırılmış ilana ait mesajlar silinemedi:", cleanupError);
+              } else {
+                setMessages((previous) => previous.filter((message) => message.cat_id !== missingCatId));
+              }
+            }
+          }
         } else if (catError) {
           console.error("İlan bilgileri yüklenemedi:", catError);
         }
@@ -371,11 +405,16 @@ function MesajlarContent() {
         setPeerTyping(Boolean(payload.is_typing));
       })
       .subscribe(async (status) => {
+        console.log("[CHAT LIVE] Kanal durumu:", status);
+
         if (status === "SUBSCRIBED" && !cancelled) {
-          await channel.track({
+          const result = await channel.track({
             user_id: userId,
             online_at: new Date().toISOString(),
           });
+
+          console.log("[CHAT LIVE] Presence sonucu:", result);
+          console.log("[CHAT LIVE] Presence durumu:", channel.presenceState());
         }
       });
 
@@ -459,12 +498,14 @@ function MesajlarContent() {
       }
     }
 
-    return [...map.values()].sort(
-      (a, b) =>
-        new Date(b.lastMessage.created_at).getTime() -
-        new Date(a.lastMessage.created_at).getTime()
-    );
-  }, [messages, userId]);
+    return [...map.values()]
+      .filter((conversation) => !removedCatIds.includes(conversation.catId))
+      .sort(
+        (a, b) =>
+          new Date(b.lastMessage.created_at).getTime() -
+          new Date(a.lastMessage.created_at).getTime()
+      );
+  }, [messages, userId, removedCatIds]);
 
   useEffect(() => {
     if (!userId || !selectedUser || !selectedCat) {
@@ -515,6 +556,7 @@ function MesajlarContent() {
 
   const activeProfile = profiles[selectedUser];
   const activeCat = cats[selectedCat];
+  const isListingRemoved = Boolean(selectedCat && removedCatIds.includes(selectedCat));
   const isSelfConversation = Boolean(
     userId && selectedUser && selectedUser === userId
   );
@@ -533,6 +575,11 @@ function MesajlarContent() {
 
     if (!selectedUser || !selectedCat) {
       setError("Mesaj göndermek için bir ilan üzerinden gelmelisin.");
+      return;
+    }
+
+    if (isListingRemoved) {
+      setError("Bu ilan kaldırıldığı için artık mesaj gönderemezsin.");
       return;
     }
 
@@ -789,12 +836,14 @@ function MesajlarContent() {
           </Link>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            <span
-              className="rounded-full px-3 py-1.5 text-xs font-bold"
-              style={{ backgroundColor: palette.soft, color: palette.accentText }}
-            >
-              {unreadTotal} okunmamış
-            </span>
+            {(!selectedUser || !selectedCat) && (
+              <span
+                className="rounded-full px-3 py-1.5 text-xs font-bold"
+                style={{ backgroundColor: palette.soft, color: palette.accentText }}
+              >
+                {unreadTotal} okunmamış
+              </span>
+            )}
             <button
               type="button"
               onClick={toggleTheme}
@@ -956,7 +1005,7 @@ function MesajlarContent() {
                   <button
                     type="button"
                     onClick={() => void toggleBlock()}
-                    disabled={blockBusy || isSelfConversation}
+                    disabled={blockBusy || isSelfConversation || isListingRemoved}
                     className="rounded-xl border px-3 py-2 text-xs font-bold transition disabled:opacity-50"
                     style={{ borderColor: palette.border, color: palette.accentText, backgroundColor: palette.soft }}
                   >
@@ -964,7 +1013,7 @@ function MesajlarContent() {
                   </button>
                 </div>
 
-                {activeCat && (
+                {activeCat && !isListingRemoved && (
                   <Link
                     href={`/kediler/${activeCat.id}`}
                     className="flex items-center gap-3 border-b px-4 py-3 transition"
@@ -986,6 +1035,25 @@ function MesajlarContent() {
                   </Link>
                 )}
 
+                {isListingRemoved ? (
+                  <div
+                    className="flex flex-1 items-center justify-center p-6"
+                    style={{ backgroundColor: darkMode ? "rgba(21,18,29,.38)" : "rgba(252,250,254,.72)" }}
+                  >
+                    <div
+                      className="w-full max-w-md rounded-3xl border p-8 text-center shadow-sm backdrop-blur-sm"
+                      style={{ borderColor: palette.border, backgroundColor: palette.card }}
+                    >
+                      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl text-3xl" style={{ backgroundColor: palette.soft }}>
+                        🐾
+                      </div>
+                      <h2 className="mt-4 text-xl font-black">Bu ilan kaldırıldı</h2>
+                      <p className="mt-2 text-sm leading-6" style={{ color: palette.muted }}>
+                        Bu ilana ait sohbet artık kullanılamıyor. Yeni mesaj gönderemezsin.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
                 <div
                   className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6"
                   style={{ backgroundColor: darkMode ? "rgba(21,18,29,.38)" : "rgba(252,250,254,.72)" }}
@@ -1063,21 +1131,22 @@ function MesajlarContent() {
                     </div>
                   )}
                 </div>
+                )}
 
-                {isSelfConversation && (
+                {!isListingRemoved && isSelfConversation && (
                   <p className="border-t px-4 py-2 text-sm" style={{ borderColor: "#D97706", backgroundColor: darkMode ? "#382719" : "#FFFBEB", color: darkMode ? "#FCD9A5" : "#92400E" }}>
                     Bu ilan senin hesabına ait. Kendine mesaj gönderemezsin. Mesajlaşmayı başka bir kullanıcı hesabıyla test et.
                   </p>
                 )}
-                {blockedByMe && !isSelfConversation && (
+                {!isListingRemoved && blockedByMe && !isSelfConversation && (
                   <p className="border-t px-4 py-2 text-sm" style={{ borderColor: palette.border, backgroundColor: palette.soft, color: palette.muted }}>
                     Bu kullanıcıyı engelledin. Mesaj göndermek için önce engeli kaldır.
                   </p>
                 )}
-                {error && <p className="border-t border-red-400/30 bg-red-500/10 px-4 py-2 text-sm text-red-500">{error}</p>}
-                {notice && <p className="border-t px-4 py-2 text-sm" style={{ borderColor: palette.border, backgroundColor: palette.soft, color: palette.accentText }}>{notice}</p>}
+                {!isListingRemoved && error && <p className="border-t border-red-400/30 bg-red-500/10 px-4 py-2 text-sm text-red-500">{error}</p>}
+                {!isListingRemoved && notice && <p className="border-t px-4 py-2 text-sm" style={{ borderColor: palette.border, backgroundColor: palette.soft, color: palette.accentText }}>{notice}</p>}
 
-                <form onSubmit={sendMessage} className="border-t p-3 sm:p-4" style={{ borderColor: palette.border, backgroundColor: palette.cardSolid }}>
+                {!isListingRemoved && <form onSubmit={sendMessage} className="border-t p-3 sm:p-4" style={{ borderColor: palette.border, backgroundColor: palette.cardSolid }}>
                   <div className="flex items-end gap-2">
                     <textarea
                       value={draft}
@@ -1101,7 +1170,7 @@ function MesajlarContent() {
                   <p className="mt-2 text-[11px]" style={{ color: palette.muted }}>
                     Mesajların bu ilanla ilişkili olarak kaydedilir.
                   </p>
-                </form>
+                </form>}
               </>
             )}
           </section>
