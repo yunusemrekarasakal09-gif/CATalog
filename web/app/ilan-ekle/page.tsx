@@ -114,7 +114,9 @@ export default function IlanEklePage() {
   const [city, setCity] = useState("");
   const [district, setDistrict] = useState("");
   const [provinces, setProvinces] = useState<ProvinceData[]>(
-    TURKEY_PROVINCES.map((name, index) => ({ id: index + 1, name, districts: [] }))
+    [...TURKEY_PROVINCES]
+      .sort((a, b) => a.localeCompare(b, "tr"))
+      .map((name, index) => ({ id: index + 1, name, districts: [] }))
   );
   const [districtsLoading, setDistrictsLoading] = useState(true);
   const [districtsError, setDistrictsError] = useState("");
@@ -167,7 +169,9 @@ export default function IlanEklePage() {
               .filter(Boolean)
               .sort((a: string, b: string) => a.localeCompare(b, "tr")),
           })
-        ).filter((province: ProvinceData) => province.id && province.name);
+        )
+          .filter((province: ProvinceData) => province.id && province.name)
+          .sort((a: ProvinceData, b: ProvinceData) => a.name.localeCompare(b.name, "tr"));
 
         if (loaded.length !== 81 || loaded.every((province) => province.districts.length === 0)) {
           throw new Error("İl ve ilçe verileri eksik geldi.");
@@ -222,9 +226,15 @@ export default function IlanEklePage() {
       ? "rgba(255, 255, 255, 0.07)"
       : "rgba(255, 255, 255, 0.82)",
     color: darkMode ? "#fff" : "#30264b",
+    colorScheme: darkMode ? "dark" : "light",
     border: `1px solid ${
       darkMode ? "rgba(221, 205, 255, 0.25)" : "rgba(116, 88, 157, 0.28)"
     }`,
+  } as const;
+
+  const selectOptionStyle = {
+    backgroundColor: darkMode ? "#2b1748" : "#ffffff",
+    color: darkMode ? "#ffffff" : "#30264b",
   } as const;
 
   const mutedColor = darkMode ? "#c5badc" : "#756887";
@@ -451,7 +461,7 @@ export default function IlanEklePage() {
           <button
             type="button"
             onClick={toggleTheme}
-            className="flex shrink-0 items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition hover:scale-[1.02]"
+            className="flex shrink-0 items-center gap-3 rounded-full px-8 py-5 text-base font-semibold transition hover:scale-[1.02]"
             style={{
               backgroundColor: darkMode
                 ? "rgba(239, 219, 255, 0.14)"
@@ -469,9 +479,9 @@ export default function IlanEklePage() {
                 <img
                   src="/images/icons/gündüz.png"
                   alt=""
-                  width={19}
-                  height={19}
-                  className="h-[19px] w-[19px] object-contain"
+                  width={38}
+                  height={38}
+                  className="h-[38px] w-[38px] object-contain"
                   aria-hidden="true"
                 />
                 Açık tema
@@ -481,9 +491,9 @@ export default function IlanEklePage() {
                 <img
                   src="/images/icons/gece.png"
                   alt=""
-                  width={19}
-                  height={19}
-                  className="h-[19px] w-[19px] object-contain"
+                  width={38}
+                  height={38}
+                  className="h-[38px] w-[38px] object-contain"
                   aria-hidden="true"
                 />
                 Koyu tema
@@ -559,9 +569,9 @@ export default function IlanEklePage() {
                   onChange={(e) => setBreed(e.target.value)}
                   required
                 >
-                  <option value="">Tür seç</option>
+                  <option value="" style={selectOptionStyle}>Tür seç</option>
                   {catBreeds.map((catBreed) => (
-                    <option key={catBreed} value={catBreed}>
+                    <option key={catBreed} value={catBreed} style={selectOptionStyle}>
                       {catBreed}
                     </option>
                   ))}
@@ -580,9 +590,9 @@ export default function IlanEklePage() {
                   onChange={(e) => setAge(e.target.value)}
                   required
                 >
-                  <option value="">Yaş seç</option>
+                  <option value="" style={selectOptionStyle}>Yaş seç</option>
                   {catAges.map((option) => (
-                    <option key={option.value} value={option.value}>
+                    <option key={option.value} value={option.value} style={selectOptionStyle}>
                       {option.label}
                     </option>
                   ))}
@@ -601,9 +611,9 @@ export default function IlanEklePage() {
                   onChange={(e) => setGender(e.target.value)}
                   required
                 >
-                  <option value="">Cinsiyet seç</option>
-                  <option value="Erkek">Erkek</option>
-                  <option value="Dişi">Dişi</option>
+                  <option value="" style={selectOptionStyle}>Cinsiyet seç</option>
+                  <option value="Erkek" style={selectOptionStyle}>Erkek</option>
+                  <option value="Dişi" style={selectOptionStyle}>Dişi</option>
                 </select>
               </div>
 
@@ -619,9 +629,9 @@ export default function IlanEklePage() {
                   onChange={(e) => setColor(e.target.value)}
                   required
                 >
-                  <option value="">Renk seç</option>
+                  <option value="" style={selectOptionStyle}>Renk seç</option>
                   {catColors.map((catColor) => (
-                    <option key={catColor} value={catColor}>
+                    <option key={catColor} value={catColor} style={selectOptionStyle}>
                       {catColor}
                     </option>
                   ))}
@@ -646,9 +656,9 @@ export default function IlanEklePage() {
                       }}
                       required
                     >
-                      <option value="">Şehir seç</option>
+                      <option value="" style={selectOptionStyle}>Şehir seç</option>
                       {provinces.map((province) => (
-                        <option key={province.name} value={province.name}>
+                        <option key={province.name} value={province.name} style={selectOptionStyle}>
                           {province.name}
                         </option>
                       ))}
@@ -665,11 +675,11 @@ export default function IlanEklePage() {
                       disabled={!city || districtsLoading || districtOptions.length === 0}
                       required
                     >
-                      <option value="">
+                      <option value="" style={selectOptionStyle}>
                         {!city ? "Önce şehir seç" : districtsLoading ? "İlçeler yükleniyor..." : "İlçe seç"}
                       </option>
                       {districtOptions.map((districtName) => (
-                        <option key={districtName} value={districtName}>
+                        <option key={districtName} value={districtName} style={selectOptionStyle}>
                           {districtName}
                         </option>
                       ))}
