@@ -93,6 +93,10 @@ function MesajlarContent() {
   const [notice, setNotice] = useState("");
   const [blockedByMe, setBlockedByMe] = useState(false);
   const [blockBusy, setBlockBusy] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState("Taciz veya rahatsız edici davranış");
+  const [reportDetails, setReportDetails] = useState("");
+  const [reportBusy, setReportBusy] = useState(false);
   const [peerOnline, setPeerOnline] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
   const liveChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -645,38 +649,74 @@ function MesajlarContent() {
     setError("");
     setNotice("");
 
-    if (blockedByMe) {
-      const { error: unblockError } = await supabase
-        .from("user_blocks")
-        .delete()
-        .eq("blocker_id", userId)
-        .eq("blocked_id", selectedUser);
+    try {
+      if (blockedByMe) {
+        const { error: unblockError } = await supabase
+          .from("user_blocks")
+          .delete()
+          .eq("blocker_id", userId)
+          .eq("blocked_id", selectedUser);
 
-      if (unblockError) {
-        setError("Engel kaldırılamadı.");
-        console.error(unblockError);
-      } else {
+        if (unblockError) throw unblockError;
+
         setBlockedByMe(false);
         setNotice("Kullanıcının engeli kaldırıldı.");
-      }
-    } else {
-      const { error: blockError } = await supabase
-        .from("user_blocks")
-        .insert({
-          blocker_id: userId,
-          blocked_id: selectedUser,
-        });
-
-      if (blockError) {
-        setError("Kullanıcı engellenemedi.");
-        console.error(blockError);
       } else {
+        const { error: blockError } = await supabase
+          .from("user_blocks")
+          .insert({
+            blocker_id: userId,
+            blocked_id: selectedUser,
+          });
+
+        if (blockError) throw blockError;
+
         setBlockedByMe(true);
-        setNotice("Kullanıcı engellendi.");
+        setDraft("");
+        setNotice("Kullanıcı engellendi. Bu konuşmadan artık mesaj gönderemezsin.");
       }
+    } catch (blockError) {
+      console.error("Engelleme işlemi başarısız:", blockError);
+      setError(blockedByMe ? "Engel kaldırılamadı." : "Kullanıcı engellenemedi.");
+    } finally {
+      setBlockBusy(false);
+    }
+  }
+
+  async function submitReport(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!userId || !selectedUser || isSelfConversation || reportBusy) return;
+
+    const details = reportDetails.trim();
+    const reason = details ? `${reportReason}: ${details}` : reportReason;
+
+    if (reason.length < 3 || reason.length > 1000) {
+      setError("Şikâyet açıklaması 3 ile 1000 karakter arasında olmalı.");
+      return;
     }
 
-    setBlockBusy(false);
+    setReportBusy(true);
+    setError("");
+    setNotice("");
+
+    const { error: reportError } = await supabase.from("reports").insert({
+      reporter_id: userId,
+      reported_user_id: selectedUser,
+      cat_id: selectedCat || null,
+      reason,
+    });
+
+    setReportBusy(false);
+
+    if (reportError) {
+      console.error("Şikâyet gönderilemedi:", reportError);
+      setError("Şikâyetin gönderilemedi. Lütfen tekrar dene.");
+      return;
+    }
+
+    setReportOpen(false);
+    setReportDetails("");
+    setNotice("Şikâyetin alındı. İncelenmek üzere yönetime iletildi.");
   }
 
   function selectConversation(conversation: Conversation) {
@@ -1002,15 +1042,38 @@ function MesajlarContent() {
                       {peerTyping ? "Yazıyor..." : peerOnline ? "Çevrimiçi" : "Çevrimdışı"}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void toggleBlock()}
-                    disabled={blockBusy || isSelfConversation || isListingRemoved}
-                    className="rounded-xl border px-3 py-2 text-xs font-bold transition disabled:opacity-50"
-                    style={{ borderColor: palette.border, color: palette.accentText, backgroundColor: palette.soft }}
-                  >
-                    {blockBusy ? "Bekle..." : blockedByMe ? "Engeli kaldır" : "Engelle"}
-                  </button>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setError("");
+                        setNotice("");
+                        setReportOpen(true);
+                      }}
+                      disabled={isSelfConversation}
+                      className="flex items-center gap-1.5 rounded-xl border px-2.5 py-2 text-xs font-bold transition hover:opacity-80 disabled:opacity-50 sm:px-3"
+                      style={{ borderColor: palette.border, color: palette.accentText, backgroundColor: palette.soft }}
+                      aria-label="Kullanıcıyı şikâyet et"
+                    >
+                      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M4 21V5m0 0c5-4 10 4 16 0v11c-6 4-11-4-16 0" />
+                      </svg>
+                      <span>Şikâyet</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void toggleBlock()}
+                      disabled={blockBusy || isSelfConversation}
+                      className="flex items-center gap-1.5 rounded-xl border px-2.5 py-2 text-xs font-bold transition hover:opacity-80 disabled:opacity-50 sm:px-3"
+                      style={{ borderColor: palette.border, color: palette.accentText, backgroundColor: palette.soft }}
+                    >
+                      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="9" />
+                        <path d="m5.6 5.6 12.8 12.8" />
+                      </svg>
+                      <span>{blockBusy ? "Bekle..." : blockedByMe ? "Engeli kaldır" : "Engelle"}</span>
+                    </button>
+                  </div>
                 </div>
 
                 {activeCat && !isListingRemoved && (
@@ -1176,6 +1239,102 @@ function MesajlarContent() {
           </section>
         </div>
       </div>
+
+      {reportOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 px-4 py-8"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !reportBusy) setReportOpen(false);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="report-dialog-title"
+            className="my-auto w-full max-w-md rounded-3xl border p-5 shadow-2xl sm:p-6"
+            style={{ backgroundColor: palette.cardSolid, borderColor: palette.border, color: palette.text }}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="report-dialog-title" className="text-xl font-black">Kullanıcıyı şikâyet et</h2>
+                <p className="mt-1 text-sm leading-6" style={{ color: palette.muted }}>
+                  Şikâyetini inceleyebilmemiz için uygun nedeni seç ve gerekiyorsa ayrıntı ekle.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReportOpen(false)}
+                disabled={reportBusy}
+                className="rounded-xl px-3 py-2 text-sm font-bold disabled:opacity-50"
+                style={{ backgroundColor: palette.soft, color: palette.muted }}
+                aria-label="Şikâyet penceresini kapat"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={submitReport} className="mt-5 space-y-4">
+              <div>
+                <label htmlFor="report-reason" className="mb-2 block text-sm font-semibold">Şikâyet nedeni</label>
+                <select
+                  id="report-reason"
+                  value={reportReason}
+                  onChange={(event) => setReportReason(event.target.value)}
+                  className="w-full rounded-xl border px-3 py-3 text-sm outline-none focus:border-[#A184D5]"
+                  style={{ borderColor: palette.border, backgroundColor: palette.input, color: palette.text }}
+                  disabled={reportBusy}
+                  required
+                >
+                  <option value="Taciz veya rahatsız edici davranış">Taciz veya rahatsız edici davranış</option>
+                  <option value="Sahte hesap veya yanıltıcı bilgi">Sahte hesap veya yanıltıcı bilgi</option>
+                  <option value="Dolandırıcılık veya şüpheli davranış">Dolandırıcılık veya şüpheli davranış</option>
+                  <option value="Uygunsuz içerik">Uygunsuz içerik</option>
+                  <option value="Spam veya istenmeyen mesaj">Spam veya istenmeyen mesaj</option>
+                  <option value="Diğer">Diğer</option>
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="report-details" className="mb-2 block text-sm font-semibold">Açıklama (isteğe bağlı)</label>
+                <textarea
+                  id="report-details"
+                  value={reportDetails}
+                  onChange={(event) => setReportDetails(event.target.value)}
+                  rows={4}
+                  maxLength={850}
+                  placeholder="Yaşadığın durumu kısaca açıkla..."
+                  className="w-full resize-y rounded-xl border px-3 py-3 text-sm outline-none focus:border-[#A184D5]"
+                  style={{ borderColor: palette.border, backgroundColor: palette.input, color: palette.text }}
+                  disabled={reportBusy}
+                />
+                <p className="mt-1 text-right text-xs" style={{ color: palette.muted }}>
+                  {reportDetails.length}/850
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setReportOpen(false)}
+                  disabled={reportBusy}
+                  className="rounded-xl px-4 py-3 text-sm font-bold disabled:opacity-50"
+                  style={{ backgroundColor: palette.soft, color: palette.text }}
+                >
+                  Vazgeç
+                </button>
+                <button
+                  type="submit"
+                  disabled={reportBusy}
+                  className="rounded-xl px-4 py-3 text-sm font-bold text-white transition hover:opacity-90 disabled:opacity-50"
+                  style={{ backgroundColor: palette.accent }}
+                >
+                  {reportBusy ? "Gönderiliyor..." : "Şikâyeti gönder"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
     </main>
   );
 }
