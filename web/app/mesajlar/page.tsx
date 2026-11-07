@@ -742,6 +742,15 @@ function MesajlarContent() {
 
   const { darkMode, toggleTheme, themeReady } = useTheme();
 
+  function handleThemeToggle() {
+    const sound = new Audio(darkMode ? "/sounds/gündüz.mp3" : "/sounds/gece.mp3");
+    sound.volume = 0.45;
+    void sound.play().catch((soundError) => {
+      console.warn("Tema değiştirme sesi çalınamadı:", soundError);
+    });
+    toggleTheme();
+  }
+
   const palette = darkMode
     ? {
         page: "#15121D",
@@ -886,7 +895,7 @@ function MesajlarContent() {
             )}
             <button
               type="button"
-              onClick={toggleTheme}
+              onClick={handleThemeToggle}
               aria-label={darkMode ? "Gündüz temasına geç" : "Gece temasına geç"}
               className="flex h-[72px] w-[72px] items-center justify-center rounded-2xl transition hover:scale-105"
               style={{ backgroundColor: palette.soft }}
@@ -1009,40 +1018,42 @@ function MesajlarContent() {
               </div>
             ) : (
               <>
-                <div className="flex items-center gap-3 border-b p-4 sm:p-5" style={{ borderColor: palette.border }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedUser("");
-                      setSelectedCat("");
-                      setDraft("");
-                      setError("");
-                      setNotice("");
-                      window.history.replaceState(null, "", "/mesajlar");
-                    }}
-                    className="rounded-lg px-2 py-1 text-sm transition lg:hidden"
-                    style={{ color: palette.muted, backgroundColor: palette.soft }}
-                    aria-label="Konuşma listesine dön"
-                  >
-                    ←
-                  </button>
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full" style={{ backgroundColor: palette.soft }}>
-                    {activeProfile?.avatar_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={activeProfile.avatar_url} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      <Image src={iconPath(darkMode ? "user ikonu.png" : "user ikonu2.png")} alt="Profil fotoğrafı yok" width={40} height={40} className="object-contain p-1" />
-                    )}
+                <div className="flex flex-col gap-3 border-b p-4 sm:p-5" style={{ borderColor: palette.border }}>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedUser("");
+                        setSelectedCat("");
+                        setDraft("");
+                        setError("");
+                        setNotice("");
+                        window.history.replaceState(null, "", "/mesajlar");
+                      }}
+                      className="rounded-lg px-2 py-1 text-sm transition lg:hidden"
+                      style={{ color: palette.muted, backgroundColor: palette.soft }}
+                      aria-label="Konuşma listesine dön"
+                    >
+                      ←
+                    </button>
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full" style={{ backgroundColor: palette.soft }}>
+                      {activeProfile?.avatar_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={activeProfile.avatar_url} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <Image src={iconPath(darkMode ? "user ikonu.png" : "user ikonu2.png")} alt="Profil fotoğrafı yok" width={42} height={42} className="object-contain p-1" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-black">{activeProfile?.display_name?.trim() || "İsimsiz kullanıcı"}</p>
+                      <p className="truncate text-xs" style={{ color: palette.muted }}>{activeProfile?.city?.trim() || "Şehir belirtilmemiş"}</p>
+                      <p className="mt-0.5 flex items-center gap-1.5 text-xs" style={{ color: peerOnline ? "#16A34A" : palette.muted }}>
+                        <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: peerOnline ? "#22C55E" : "#9CA3AF" }} />
+                        {peerTyping ? "Yazıyor..." : peerOnline ? "Çevrimiçi" : "Çevrimdışı"}
+                      </p>
+                    </div>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-black">{activeProfile?.display_name?.trim() || "İsimsiz kullanıcı"}</p>
-                    <p className="truncate text-xs" style={{ color: palette.muted }}>{activeProfile?.city?.trim() || "Şehir belirtilmemiş"}</p>
-                    <p className="mt-0.5 flex items-center gap-1.5 text-xs" style={{ color: peerOnline ? "#16A34A" : palette.muted }}>
-                      <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: peerOnline ? "#22C55E" : "#9CA3AF" }} />
-                      {peerTyping ? "Yazıyor..." : peerOnline ? "Çevrimiçi" : "Çevrimdışı"}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1.5">
+                  <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
                     <button
                       type="button"
                       onClick={() => {
@@ -1051,27 +1062,35 @@ function MesajlarContent() {
                         setReportOpen(true);
                       }}
                       disabled={isSelfConversation}
-                      className="flex items-center gap-1.5 rounded-xl border px-2.5 py-2 text-xs font-bold transition hover:opacity-80 disabled:opacity-50 sm:px-3"
+                      className="flex min-h-12 items-center justify-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm font-extrabold shadow-sm transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-14 sm:gap-3 sm:text-base"
                       style={{ borderColor: palette.border, color: palette.accentText, backgroundColor: palette.soft }}
                       aria-label="Kullanıcıyı şikâyet et"
                     >
-                      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M4 21V5m0 0c5-4 10 4 16 0v11c-6 4-11-4-16 0" />
-                      </svg>
-                      <span>Şikâyet</span>
+                      <Image
+                        src={`/images/icons/${darkMode ? "şikayet.png" : "şikayet2.png"}`}
+                        alt=""
+                        width={36}
+                        height={36}
+                        className="h-8 w-8 shrink-0 object-contain sm:h-9 sm:w-9"
+                      />
+                      <span>Şikâyet et</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => void toggleBlock()}
                       disabled={blockBusy || isSelfConversation}
-                      className="flex items-center gap-1.5 rounded-xl border px-2.5 py-2 text-xs font-bold transition hover:opacity-80 disabled:opacity-50 sm:px-3"
+                      className="flex min-h-12 items-center justify-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm font-extrabold shadow-sm transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-14 sm:gap-3 sm:text-base"
                       style={{ borderColor: palette.border, color: palette.accentText, backgroundColor: palette.soft }}
+                      aria-label={blockedByMe ? "Kullanıcının engelini kaldır" : "Kullanıcıyı engelle"}
                     >
-                      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <circle cx="12" cy="12" r="9" />
-                        <path d="m5.6 5.6 12.8 12.8" />
-                      </svg>
-                      <span>{blockBusy ? "Bekle..." : blockedByMe ? "Engeli kaldır" : "Engelle"}</span>
+                      <Image
+                        src={`/images/icons/${darkMode ? "engelle.png" : "engelle2.png"}`}
+                        alt=""
+                        width={36}
+                        height={36}
+                        className="h-8 w-8 shrink-0 object-contain sm:h-9 sm:w-9"
+                      />
+                      <span>{blockBusy ? "Bekleyin..." : blockedByMe ? "Engeli kaldır" : "Engelle"}</span>
                     </button>
                   </div>
                 </div>
@@ -1094,7 +1113,7 @@ function MesajlarContent() {
                       <p className="text-xs" style={{ color: palette.muted }}>İlan hakkında konuşuyorsunuz</p>
                       <p className="truncate text-sm font-bold">{activeCat.name}</p>
                     </div>
-                    <span className="text-xs font-bold" style={{ color: palette.accent }}>İlanı gör →</span>
+                    <span className="flex shrink-0 items-center gap-1 text-sm font-extrabold sm:text-base" style={{ color: palette.accent }}><span>İlanı gör</span><span aria-hidden="true" className="text-xl leading-none sm:text-2xl">→</span></span>
                   </Link>
                 )}
 
