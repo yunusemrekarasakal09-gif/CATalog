@@ -2275,7 +2275,7 @@ export default function Home() {
 
             <VisualIcon
 
-              src={image.userAlt}
+              src="/images/icons/arama.png"
 
               alt=""
 
