@@ -122,9 +122,15 @@ export default function GirisPage() {
             className="inline-flex min-h-11 items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition hover:opacity-75"
             style={{ color: colors.text }}
           >
-            <span aria-hidden="true" className="text-xl">
-              ←
-            </span>
+            <Image
+              src="/images/icons/ok.png"
+              alt=""
+              aria-hidden="true"
+              width={22}
+              height={22}
+              className="h-[22px] w-[22px] object-contain"
+              style={{ transform: "scaleX(-1)" }}
+            />
             Ana sayfa
           </Link>
 
