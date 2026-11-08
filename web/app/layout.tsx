@@ -2,6 +2,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import SuspensionNotice from "@/components/SuspensionNotice";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -17,7 +18,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "CATalog | Bir Miyav",
   description:
-    "Kediler için eş bulma ve ilan platformu. CAT-ALOG ile kedin için uygun eş adaylarını keşfet.",
+    "Kediler için eş bulma ve ilan platformu. CATalog ile kedin için uygun eş adaylarını keşfet.",
   applicationName: "CATalog",
   icons: {
     icon: "/favicon.ico",
@@ -35,7 +36,10 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <SuspensionNotice />
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );

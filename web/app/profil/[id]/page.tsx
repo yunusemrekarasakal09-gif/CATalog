@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState, type FormEvent } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -87,6 +87,13 @@ function ProfileContent() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  const [blockedByMe, setBlockedByMe] = useState(false);
+  const [blockBusy, setBlockBusy] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState("Uygunsuz davranış");
+  const [reportDetails, setReportDetails] = useState("");
+  const [reportBusy, setReportBusy] = useState(false);
 
   const { darkMode, toggleTheme, themeReady } = useTheme();
   const palette = darkMode
@@ -226,6 +233,25 @@ function ProfileContent() {
       }
 
       setProfile(profileData as Profile);
+
+      if (userId && userId !== profileId) {
+        const { data: blockData, error: blockError } = await supabase
+          .from("user_blocks")
+          .select("blocked_id")
+          .eq("blocker_id", userId)
+          .eq("blocked_id", profileId)
+          .maybeSingle();
+
+        if (cancelled) return;
+
+        if (blockError) {
+          console.error("Engelleme durumu kontrol edilemedi:", blockError);
+        } else {
+          setBlockedByMe(Boolean(blockData));
+        }
+      } else {
+        setBlockedByMe(false);
+      }
 
       const { data: catData, error: catsError } = await supabase
         .from("cats")
@@ -382,6 +408,98 @@ function ProfileContent() {
     setSaving(false);
   }
 
+  async function toggleBlock() {
+    if (!currentUserId || isOwnProfile || blockBusy) return;
+
+    const confirmed = window.confirm(
+      blockedByMe
+        ? "Bu kullanıcının engelini kaldırmak istiyor musun?"
+        : "Bu kullanıcıyı engellemek istiyor musun? Engellediğinde sana mesaj gönderemez."
+    );
+
+    if (!confirmed) return;
+
+    setBlockBusy(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      if (blockedByMe) {
+        const { error: unblockError } = await supabase
+          .from("user_blocks")
+          .delete()
+          .eq("blocker_id", currentUserId)
+          .eq("blocked_id", profileId);
+
+        if (unblockError) throw unblockError;
+
+        setBlockedByMe(false);
+        setSuccess("Kullanıcının engeli kaldırıldı.");
+      } else {
+        const { error: blockError } = await supabase
+          .from("user_blocks")
+          .insert({
+            blocker_id: currentUserId,
+            blocked_id: profileId,
+          });
+
+        if (blockError) throw blockError;
+
+        setBlockedByMe(true);
+        setSuccess("Kullanıcı engellendi. Sana mesaj gönderemez.");
+      }
+    } catch (blockError) {
+      console.error("Engelleme işlemi başarısız:", blockError);
+      setError(
+        blockedByMe
+          ? "Kullanıcının engeli kaldırılamadı."
+          : "Kullanıcı engellenemedi. Lütfen tekrar dene."
+      );
+    } finally {
+      setBlockBusy(false);
+    }
+  }
+
+  async function submitProfileReport(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!currentUserId || isOwnProfile || reportBusy) return;
+
+    const details = reportDetails.trim();
+    const reason = details
+      ? `${reportReason}: ${details}`
+      : reportReason;
+
+    if (reason.length < 3 || reason.length > 1000) {
+      setError("Şikâyet açıklaması 3 ile 1000 karakter arasında olmalı.");
+      return;
+    }
+
+    setReportBusy(true);
+    setError("");
+    setSuccess("");
+
+    const { error: reportError } = await supabase.from("reports").insert({
+      reporter_id: currentUserId,
+      reported_user_id: profileId,
+      cat_id: null,
+      reason,
+    });
+
+    setReportBusy(false);
+
+    if (reportError) {
+      console.error("Profil şikâyeti gönderilemedi:", reportError);
+      setError("Şikâyetin gönderilemedi. Lütfen tekrar dene.");
+      return;
+    }
+
+    setReportOpen(false);
+    setReportDetails("");
+    setReportReason("Uygunsuz davranış");
+    setSuccess("Şikâyetin alındı. İncelenmek üzere yönetime iletildi.");
+  }
+
   if (loading || !themeReady) {
     return <ProfileLoading />;
   }
@@ -487,6 +605,40 @@ function ProfileContent() {
                 >
                   Profili düzenle
                 </Link>
+              )}
+
+              {!isOwnProfile && currentUserId && (
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setReportOpen(true)}
+                    className="rounded-xl border px-4 py-3 text-sm font-semibold transition hover:opacity-80"
+                    style={{
+                      borderColor: palette.border,
+                      color: palette.text,
+                      backgroundColor: palette.card,
+                    }}
+                  >
+                    Şikâyet et
+                  </button>
+                  <button
+                    type="button"
+                    onClick={toggleBlock}
+                    disabled={blockBusy}
+                    className="rounded-xl border px-4 py-3 text-sm font-semibold transition hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-60"
+                    style={{
+                      borderColor: darkMode ? "rgba(248,113,113,0.35)" : "#FECACA",
+                      color: darkMode ? "#FCA5A5" : "#B91C1C",
+                      backgroundColor: palette.card,
+                    }}
+                  >
+                    {blockBusy
+                      ? "İşleniyor..."
+                      : blockedByMe
+                        ? "Engeli kaldır"
+                        : "Engelle"}
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -745,6 +897,115 @@ function ProfileContent() {
           )}
         </section>
       </div>
+      {reportOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 px-4 py-6 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="profile-report-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !reportBusy) {
+              setReportOpen(false);
+            }
+          }}
+        >
+          <form
+            onSubmit={submitProfileReport}
+            className="w-full max-w-lg rounded-3xl border p-6 shadow-2xl"
+            style={{
+              backgroundColor: palette.card,
+              borderColor: palette.border,
+              color: palette.text,
+            }}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="profile-report-title" className="text-xl font-black">
+                  Profili şikâyet et
+                </h2>
+                <p className="mt-1 text-sm" style={{ color: palette.muted }}>
+                  Şikâyet nedenini seç ve istersen ayrıntı ekle.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReportOpen(false)}
+                disabled={reportBusy}
+                aria-label="Şikâyet penceresini kapat"
+                className="rounded-lg px-2 py-1 text-2xl leading-none hover:opacity-70 disabled:opacity-40"
+              >
+                ×
+              </button>
+            </div>
+
+            <label
+              htmlFor="profile-report-reason"
+              className="mt-5 block text-sm font-semibold"
+            >
+              Şikâyet nedeni
+            </label>
+            <select
+              id="profile-report-reason"
+              value={reportReason}
+              onChange={(event) => setReportReason(event.target.value)}
+              className="mt-2 w-full rounded-xl border p-3 outline-none"
+              style={{
+                backgroundColor: palette.input,
+                borderColor: palette.border,
+                color: palette.text,
+              }}
+            >
+              <option>Uygunsuz davranış</option>
+              <option>Sahte profil veya yanıltıcı bilgi</option>
+              <option>Spam veya reklam</option>
+              <option>Hakaret veya taciz</option>
+              <option>Diğer</option>
+            </select>
+
+            <label
+              htmlFor="profile-report-details"
+              className="mt-4 block text-sm font-semibold"
+            >
+              Açıklama (isteğe bağlı)
+            </label>
+            <textarea
+              id="profile-report-details"
+              value={reportDetails}
+              onChange={(event) => setReportDetails(event.target.value)}
+              rows={4}
+              maxLength={900}
+              placeholder="Şikâyetini açıklayabilirsin..."
+              className="mt-2 w-full resize-y rounded-xl border p-3 outline-none"
+              style={{
+                backgroundColor: palette.input,
+                borderColor: palette.border,
+                color: palette.text,
+              }}
+            />
+
+            <div className="mt-5 flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setReportOpen(false)}
+                disabled={reportBusy}
+                className="rounded-xl border px-4 py-3 text-sm font-semibold disabled:opacity-50"
+                style={{ borderColor: palette.border, color: palette.text }}
+              >
+                Vazgeç
+              </button>
+              <button
+                type="submit"
+                disabled={reportBusy}
+                className="rounded-xl px-5 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                style={{ backgroundColor: palette.accent }}
+              >
+                {reportBusy ? "Gönderiliyor..." : "Şikâyeti gönder"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       <style jsx global>{`
         .catalog-profile-page .bg-white { background-color: ${darkMode ? "rgba(32,27,41,0.94)" : "#FFFFFF"} !important; }
         .catalog-profile-page [class*="bg-[#F5F0F9]"], .catalog-profile-page [class*="bg-[#EEE7F5]"] { background-color: ${darkMode ? "#2A2235" : "#F5F0F9"} !important; }

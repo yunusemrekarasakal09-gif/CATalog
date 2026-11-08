@@ -39,7 +39,7 @@ export default function GirisPage() {
         return;
       }
 
-      router.push("/");
+      router.replace("/");
       router.refresh();
     } catch {
       setErrorMessage(
@@ -115,7 +115,6 @@ export default function GirisPage() {
       />
 
       <div className="relative z-10 w-full max-w-md">
-        {/* Üst bölüm */}
         <div className="mb-5 flex items-center justify-between gap-3">
           <Link
             href="/"
@@ -129,7 +128,6 @@ export default function GirisPage() {
             Ana sayfa
           </Link>
 
-          {/* Büyütülmüş tema değiştirme ikonu */}
           <button
             type="button"
             onClick={toggleTheme}
@@ -138,11 +136,7 @@ export default function GirisPage() {
                 ? "Açık temaya geç"
                 : "Koyu temaya geç"
             }
-            title={
-              darkMode
-                ? "Açık tema"
-                : "Koyu tema"
-            }
+            title={darkMode ? "Açık tema" : "Koyu tema"}
             className="flex h-[66px] w-[66px] shrink-0 items-center justify-center rounded-2xl border p-2 transition hover:scale-105"
             style={{
               backgroundColor: colors.card,
@@ -155,11 +149,7 @@ export default function GirisPage() {
                   ? "/images/icons/gece.png"
                   : "/images/icons/gündüz.png"
               }
-              alt={
-                darkMode
-                  ? "Koyu tema"
-                  : "Açık tema"
-              }
+              alt={darkMode ? "Koyu tema" : "Açık tema"}
               width={54}
               height={54}
               className="h-[54px] w-[54px] object-contain"
@@ -167,7 +157,6 @@ export default function GirisPage() {
           </button>
         </div>
 
-        {/* Giriş kartı */}
         <section
           className="rounded-3xl border p-6 shadow-2xl backdrop-blur-xl sm:p-8"
           style={{
@@ -178,7 +167,6 @@ export default function GirisPage() {
               : "0 24px 70px rgba(74, 49, 104, 0.12)",
           }}
         >
-          {/* 1,5 kat büyütülmüş CATalog logosu */}
           <div className="mb-5 flex justify-center">
             <Link
               href="/"
@@ -218,7 +206,6 @@ export default function GirisPage() {
             onSubmit={handleLogin}
             className="mt-7 space-y-5"
           >
-            {/* E-posta */}
             <div>
               <label
                 htmlFor="email"
@@ -237,9 +224,7 @@ export default function GirisPage() {
                 inputMode="email"
                 maxLength={254}
                 value={email}
-                onChange={(event) =>
-                  setEmail(event.target.value)
-                }
+                onChange={(event) => setEmail(event.target.value)}
                 placeholder="ornek@mail.com"
                 disabled={loading}
                 className="w-full rounded-xl border px-4 py-3.5 text-sm outline-none transition focus:border-[#A184D5] focus:ring-2 focus:ring-[#A184D5]/20 disabled:opacity-60"
@@ -251,7 +236,6 @@ export default function GirisPage() {
               />
             </div>
 
-            {/* Şifre */}
             <div>
               <label
                 htmlFor="password"
@@ -269,9 +253,7 @@ export default function GirisPage() {
                   required
                   autoComplete="current-password"
                   value={password}
-                  onChange={(event) =>
-                    setPassword(event.target.value)
-                  }
+                  onChange={(event) => setPassword(event.target.value)}
                   placeholder="Şifreni gir"
                   disabled={loading}
                   className="w-full rounded-xl border px-4 py-3.5 pr-16 text-sm outline-none transition focus:border-[#A184D5] focus:ring-2 focus:ring-[#A184D5]/20 disabled:opacity-60"
@@ -302,7 +284,6 @@ export default function GirisPage() {
               </div>
             </div>
 
-            {/* Hata mesajı */}
             {errorMessage && (
               <div
                 role="alert"
@@ -318,14 +299,11 @@ export default function GirisPage() {
               </div>
             )}
 
-            {/* Giriş butonu */}
             <button
               type="submit"
               disabled={loading}
               className="flex w-full items-center justify-center gap-2 rounded-xl py-3.5 font-bold text-white shadow-md transition hover:-translate-y-0.5 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
-              style={{
-                backgroundColor: colors.primary,
-              }}
+              style={{ backgroundColor: colors.primary }}
               onMouseEnter={(event) => {
                 if (!loading) {
                   event.currentTarget.style.backgroundColor =
@@ -344,13 +322,10 @@ export default function GirisPage() {
                 />
               )}
 
-              {loading
-                ? "Giriş yapılıyor..."
-                : "Giriş yap"}
+              {loading ? "Giriş yapılıyor..." : "Giriş yap"}
             </button>
           </form>
 
-          {/* Kayıt bağlantısı */}
           <div
             className="mt-6 border-t pt-5 text-center"
             style={{ borderColor: colors.border }}

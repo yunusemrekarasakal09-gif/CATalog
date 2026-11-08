@@ -26,6 +26,8 @@ type Cat = {
   color: string | null;
   photo_urls: string[] | null;
   description: string | null;
+  allow_phone_calls: boolean | null;
+  phone: string | null;
   created_at: string | null;
 };
 
@@ -137,7 +139,7 @@ function KediDetayContent() {
       const { data, error: catError } = await supabase
         .from("cats")
         .select(
-          "id, owner_id, name, breed, age_years, gender, city, color, photo_urls, description, created_at"
+          "id, owner_id, name, breed, age_years, gender, city, color, photo_urls, description, allow_phone_calls, phone, created_at"
         )
         .eq("id", catId)
         .eq("is_active", true)
@@ -815,6 +817,20 @@ function KediDetayContent() {
                 <span aria-hidden="true">✉</span>
                 Mesaj gönder
               </button>
+
+              {cat.allow_phone_calls && cat.phone?.trim() && (
+                <a
+                  href={`tel:${cat.phone.replace(/[^+\\d]/g, "")}`}
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-3.5 text-sm font-bold transition hover:opacity-80"
+                  style={{
+                    borderColor: colors.border,
+                    color: colors.link,
+                  }}
+                >
+                  <span aria-hidden="true">☎</span>
+                  Telefonla ara
+                </a>
+              )}
 
               <p
                 className="mt-3 text-xs leading-5"

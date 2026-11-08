@@ -9,6 +9,10 @@ import { useTheme } from "@/components/ThemeProvider";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
+const SUPPORT_USER = "__catalog_team__";
+const SUPPORT_CHAT = "__catalog_support__";
+const SUPPORT_LOGO = "/images/brand/CATolog%20logo%20512x512.png";
+
 type Message = {
   id: string;
   sender_id: string;
@@ -17,6 +21,15 @@ type Message = {
   body: string;
   created_at: string;
   delivered_at: string | null;
+  read_at: string | null;
+};
+
+type SupportMessage = {
+  id: string;
+  user_id: string;
+  sender_role: "user" | "team";
+  body: string;
+  created_at: string;
   read_at: string | null;
 };
 
@@ -40,6 +53,16 @@ type Conversation = {
   catId: string;
   lastMessage: Message;
   unreadCount: number;
+};
+
+type DisplayMessage = {
+  id: string;
+  body: string;
+  created_at: string;
+  read_at: string | null;
+  delivered_at: string | null;
+  mine: boolean;
+  support: boolean;
 };
 
 function formatTime(value: string) {
@@ -76,15 +99,22 @@ function MesajlarContent() {
   const searchParams = useSearchParams();
   const requestedUser = searchParams.get("user");
   const requestedCat = searchParams.get("cat");
+  const requestedSupport = searchParams.get("support") === "1";
 
   const [userId, setUserId] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [supportMessages, setSupportMessages] = useState<SupportMessage[]>([]);
   const [profiles, setProfiles] = useState<Record<string, Profile>>({});
   const [cats, setCats] = useState<Record<string, CatInfo>>({});
   const [removedCatIds, setRemovedCatIds] = useState<string[]>([]);
+  const [profileErrors, setProfileErrors] = useState<string[]>([]);
 
-  const [selectedUser, setSelectedUser] = useState(requestedUser ?? "");
-  const [selectedCat, setSelectedCat] = useState(requestedCat ?? "");
+  const [selectedUser, setSelectedUser] = useState(
+    requestedSupport ? SUPPORT_USER : requestedUser ?? ""
+  );
+  const [selectedCat, setSelectedCat] = useState(
+    requestedSupport ? SUPPORT_CHAT : requestedCat ?? ""
+  );
 
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
@@ -99,200 +129,246 @@ function MesajlarContent() {
   const [reportBusy, setReportBusy] = useState(false);
   const [peerOnline, setPeerOnline] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
+
   const liveChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingActiveRef = useRef(false);
   const removedCleanupRef = useRef<Set<string>>(new Set());
 
-  const loadMessages = useCallback(
-    async (currentUserId: string) => {
-      const { data, error: queryError } = await supabase
+  const isSupportConversation =
+    selectedUser === SUPPORT_USER && selectedCat === SUPPORT_CHAT;
+
+  const loadMessages = useCallback(async (currentUserId: string) => {
+    const [
+      { data: messageData, error: messageError },
+      { data: supportData, error: supportError },
+    ] = await Promise.all([
+      supabase
         .from("messages")
-        .select(
-          "id, sender_id, recipient_id, cat_id, body, created_at, delivered_at, read_at"
-        )
-        .or(
-          `sender_id.eq.${currentUserId},recipient_id.eq.${currentUserId}`
-        )
-        .order("created_at", { ascending: true });
+        .select("id, sender_id, recipient_id, cat_id, body, created_at, delivered_at, read_at")
+        .or(`sender_id.eq.${currentUserId},recipient_id.eq.${currentUserId}`)
+        .order("created_at", { ascending: true }),
 
-      if (queryError) {
-        setError("Mesajlar yüklenemedi. Lütfen sayfayı yenile.");
-        console.error("Mesajlar yüklenemedi:", queryError);
-        return;
+      supabase
+        .from("support_messages")
+        .select("id, user_id, sender_role, body, created_at, read_at")
+        .eq("user_id", currentUserId)
+        .order("created_at", { ascending: true }),
+    ]);
+
+    if (messageError) {
+      setError("Mesajlar yüklenemedi. Lütfen sayfayı yenile.");
+      console.error("Mesaj yükleme hatası:", messageError);
+      return;
+    }
+
+    if (supportError) {
+      console.error("Destek mesajları yüklenemedi:", supportError);
+      setError("CATalog Team mesajları yüklenemedi.");
+    }
+
+    const loaded = (messageData ?? []) as Message[];
+    const loadedSupport = (supportData ?? []) as SupportMessage[];
+
+    setMessages(loaded);
+    setSupportMessages(loadedSupport);
+
+    const otherIds = loaded.map((message) =>
+      message.sender_id === currentUserId
+        ? message.recipient_id
+        : message.sender_id
+    );
+
+    if (requestedUser && requestedUser !== currentUserId) {
+      otherIds.push(requestedUser);
+    }
+
+    const uniqueOtherIds = [...new Set(otherIds)];
+
+    const catIds = loaded
+      .map((message) => message.cat_id)
+      .filter((id): id is string => Boolean(id));
+
+    if (requestedCat && requestedCat !== SUPPORT_CHAT) {
+      catIds.push(requestedCat);
+    }
+
+    const uniqueCatIds = [...new Set(catIds)];
+
+    if (uniqueOtherIds.length > 0) {
+      const { data: profileData, error: profileError } = await supabase
+        .from("profiles")
+        .select("id, display_name, avatar_url, city")
+        .in("id", uniqueOtherIds);
+
+      if (profileError) {
+        console.error("Profil bilgileri yüklenemedi:", profileError);
+        setProfileErrors((previous) => [
+          ...new Set([...previous, ...uniqueOtherIds]),
+        ]);
+      } else if (profileData) {
+        setProfileErrors((previous) =>
+          previous.filter((id) => !uniqueOtherIds.includes(id))
+        );
+
+        setProfiles((previous) => {
+          const next = { ...previous };
+
+          for (const profile of profileData as Profile[]) {
+            next[profile.id] = profile;
+          }
+
+          return next;
+        });
       }
+    }
 
-      const loaded = (data ?? []) as Message[];
-      setMessages(loaded);
+    if (uniqueCatIds.length > 0) {
+      const { data: catData, error: catError } = await supabase
+        .from("cats")
+        .select("id, owner_id, name, photo_urls, city")
+        .in("id", uniqueCatIds);
 
-      const otherIds = loaded.map((message) =>
-        message.sender_id === currentUserId
-          ? message.recipient_id
-          : message.sender_id
-      );
+      if (!catError && catData) {
+        const availableCats = catData as CatInfo[];
+        const availableIds = new Set(availableCats.map((cat) => cat.id));
+        const missingIds = uniqueCatIds.filter((id) => !availableIds.has(id));
 
-      if (requestedUser && requestedUser !== currentUserId) {
-        otherIds.push(requestedUser);
-      }
+        setCats((previous) => {
+          const next = { ...previous };
 
-      const uniqueOtherIds = [...new Set(otherIds)];
+          for (const cat of availableCats) {
+            next[cat.id] = cat;
+          }
 
-      const catIds = loaded
-        .map((message) => message.cat_id)
-        .filter((id): id is string => Boolean(id));
+          for (const id of missingIds) {
+            delete next[id];
+          }
 
-      if (requestedCat) {
-        catIds.push(requestedCat);
-      }
+          return next;
+        });
 
-      const uniqueCatIds = [...new Set(catIds)];
+        if (missingIds.length > 0) {
+          setRemovedCatIds((previous) =>
+            [...new Set([...previous, ...missingIds])]
+          );
 
-      if (uniqueOtherIds.length > 0) {
-        const { data: profileData, error: profileError } = await supabase
-          .from("profiles")
-          .select("id, display_name, avatar_url, city")
-          .in("id", uniqueOtherIds);
+          for (const missingId of missingIds) {
+            if (removedCleanupRef.current.has(missingId)) continue;
+            removedCleanupRef.current.add(missingId);
 
-        if (!profileError && profileData) {
-          setProfiles((previous) => {
-            const next = { ...previous };
+            const { error: cleanupError } = await supabase
+              .from("messages")
+              .delete()
+              .eq("cat_id", missingId)
+              .or(`sender_id.eq.${currentUserId},recipient_id.eq.${currentUserId}`);
 
-            for (const profile of profileData as Profile[]) {
-              next[profile.id] = profile;
-            }
-
-            return next;
-          });
-        } else if (profileError) {
-          console.error("Profil bilgileri yüklenemedi:", profileError);
-        }
-      }
-
-      if (uniqueCatIds.length > 0) {
-        const { data: catData, error: catError } = await supabase
-          .from("cats")
-          .select("id, owner_id, name, photo_urls, city")
-          .in("id", uniqueCatIds);
-
-        if (!catError && catData) {
-          const availableCats = catData as CatInfo[];
-          const availableCatIds = new Set(availableCats.map((cat) => cat.id));
-          const missingCatIds = uniqueCatIds.filter((catId) => !availableCatIds.has(catId));
-
-          setCats((previous) => {
-            const next = { ...previous };
-
-            for (const cat of availableCats) {
-              next[cat.id] = cat;
-            }
-
-            for (const missingCatId of missingCatIds) {
-              delete next[missingCatId];
-            }
-
-            return next;
-          });
-
-          if (missingCatIds.length > 0) {
-            setRemovedCatIds((previous) => [...new Set([...previous, ...missingCatIds])]);
-
-            // İlanı silinmiş konuşmaların mesajlarını veritabanından temizlemeyi dene.
-            // Bunun çalışması için aşağıdaki yanıttaki dar kapsamlı DELETE RLS politikası gerekir.
-            for (const missingCatId of missingCatIds) {
-              if (removedCleanupRef.current.has(missingCatId)) continue;
-              removedCleanupRef.current.add(missingCatId);
-
-              const { error: cleanupError } = await supabase
-                .from("messages")
-                .delete()
-                .eq("cat_id", missingCatId)
-                .or(`sender_id.eq.${currentUserId},recipient_id.eq.${currentUserId}`);
-
-              if (cleanupError) {
-                removedCleanupRef.current.delete(missingCatId);
-                console.error("Kaldırılmış ilana ait mesajlar silinemedi:", cleanupError);
-              } else {
-                setMessages((previous) => previous.filter((message) => message.cat_id !== missingCatId));
-              }
+            if (cleanupError) {
+              removedCleanupRef.current.delete(missingId);
+              console.error("Silinmiş ilan mesajları temizlenemedi:", cleanupError);
+            } else {
+              setMessages((previous) =>
+                previous.filter((message) => message.cat_id !== missingId)
+              );
             }
           }
-        } else if (catError) {
-          console.error("İlan bilgileri yüklenemedi:", catError);
         }
+      } else if (catError) {
+        console.error("İlan bilgileri yüklenemedi:", catError);
       }
-    },
-    [requestedUser, requestedCat]
-  );
+    }
 
-  const markDelivered = useCallback(
-    async (currentUserId: string, incoming: Message[]) => {
-      const pending = incoming.filter(
-        (message) =>
-          message.recipient_id === currentUserId &&
-          message.delivered_at === null
-      );
+    // Bekleyen normal mesajları teslim edildi olarak işaretle.
+    const pending = loaded.filter(
+      (message) =>
+        message.recipient_id === currentUserId &&
+        message.delivered_at === null
+    );
 
-      if (pending.length === 0) return;
-
+    for (const message of pending) {
       const now = new Date().toISOString();
 
-      for (const message of pending) {
-        const { error: updateError } = await supabase
-          .from("messages")
-          .update({ delivered_at: now })
-          .eq("id", message.id)
-          .eq("recipient_id", currentUserId)
-          .is("delivered_at", null);
+      const { error: updateError } = await supabase
+        .from("messages")
+        .update({ delivered_at: now })
+        .eq("id", message.id)
+        .eq("recipient_id", currentUserId)
+        .is("delivered_at", null);
 
-        if (updateError) {
-          console.error("Teslim bilgisi güncellenemedi:", updateError);
-        }
+      if (updateError) {
+        console.error("Teslim bilgisi güncellenemedi:", updateError);
       }
-    },
-    []
-  );
+    }
+  }, [requestedUser, requestedCat]);
 
-  const markRead = useCallback(
-    async (currentUserId: string, peerId: string, catId: string) => {
-      const incoming = messages.filter(
-        (message) =>
-          message.sender_id === peerId &&
-          message.recipient_id === currentUserId &&
-          message.cat_id === catId &&
-          message.read_at === null
-      );
+  const markSupportRead = useCallback(async (currentUserId: string) => {
+    const unread = supportMessages.filter(
+      (message) =>
+        message.sender_role === "team" &&
+        message.read_at === null
+    );
 
-      if (incoming.length === 0) return;
+    for (const message of unread) {
+      const { error: updateError } = await supabase
+        .from("support_messages")
+        .update({ read_at: new Date().toISOString() })
+        .eq("id", message.id)
+        .eq("user_id", currentUserId)
+        .is("read_at", null);
 
+      if (updateError) {
+        console.error("Destek mesajı okundu bilgisi güncellenemedi:", updateError);
+      }
+    }
+  }, [supportMessages]);
+
+  const markNormalRead = useCallback(async (
+    currentUserId: string,
+    peerId: string,
+    catId: string
+  ) => {
+    const incoming = messages.filter(
+      (message) =>
+        message.sender_id === peerId &&
+        message.recipient_id === currentUserId &&
+        message.cat_id === catId &&
+        message.read_at === null
+    );
+
+    for (const message of incoming) {
       const now = new Date().toISOString();
 
-      for (const message of incoming) {
-        const { error: updateError } = await supabase
-          .from("messages")
-          .update({
-            delivered_at: message.delivered_at ?? now,
-            read_at: now,
-          })
-          .eq("id", message.id)
-          .eq("recipient_id", currentUserId)
-          .is("read_at", null);
+      const { error: updateError } = await supabase
+        .from("messages")
+        .update({
+          delivered_at: message.delivered_at ?? now,
+          read_at: now,
+        })
+        .eq("id", message.id)
+        .eq("recipient_id", currentUserId)
+        .is("read_at", null);
 
-        if (updateError) {
-          console.error("Okundu bilgisi güncellenemedi:", updateError);
-        }
+      if (updateError) {
+        console.error("Okundu bilgisi güncellenemedi:", updateError);
       }
-    },
-    [messages]
-  );
+    }
+  }, [messages]);
 
   useEffect(() => {
+    if (requestedSupport) {
+      setSelectedUser(SUPPORT_USER);
+      setSelectedCat(SUPPORT_CHAT);
+      return;
+    }
+
     setSelectedUser(requestedUser ?? "");
     setSelectedCat(requestedCat ?? "");
-  }, [requestedUser, requestedCat]);
+  }, [requestedUser, requestedCat, requestedSupport]);
 
   useEffect(() => {
     let cancelled = false;
-    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let messageChannel: ReturnType<typeof supabase.channel> | null = null;
+    let supportChannel: ReturnType<typeof supabase.channel> | null = null;
 
     async function initialize() {
       setLoading(true);
@@ -311,19 +387,24 @@ function MesajlarContent() {
       const currentUserId = data.user.id;
       setUserId(currentUserId);
 
-      if (requestedUser && requestedUser !== currentUserId) {
-        setSelectedUser(requestedUser);
-      }
+      if (requestedSupport) {
+        setSelectedUser(SUPPORT_USER);
+        setSelectedCat(SUPPORT_CHAT);
+      } else {
+        if (requestedUser && requestedUser !== currentUserId) {
+          setSelectedUser(requestedUser);
+        }
 
-      if (requestedCat) {
-        setSelectedCat(requestedCat);
+        if (requestedCat) {
+          setSelectedCat(requestedCat);
+        }
       }
 
       await loadMessages(currentUserId);
 
       if (cancelled) return;
 
-      channel = supabase
+      messageChannel = supabase
         .channel(`messages-${currentUserId}`)
         .on(
           "postgres_changes",
@@ -348,20 +429,34 @@ function MesajlarContent() {
               row.sender_id !== currentUserId
             ) {
               const audio = new Audio("/sounds/mesaj%20geldi.mp3");
-              void audio.play().catch((soundError) => {
-                console.warn("Mesaj sesi çalınamadı:", soundError);
-              });
+              void audio.play().catch(() => {});
             }
 
             await loadMessages(currentUserId);
+          }
+        )
+        .subscribe();
 
+      supportChannel = supabase
+        .channel(`support-messages-${currentUserId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "support_messages",
+            filter: `user_id=eq.${currentUserId}`,
+          },
+          async (payload) => {
             if (
               payload.eventType === "INSERT" &&
-              row.recipient_id === currentUserId &&
-              row.id
+              (payload.new as SupportMessage).sender_role === "team"
             ) {
-              await markDelivered(currentUserId, [row as Message]);
+              const audio = new Audio("/sounds/mesaj%20geldi.mp3");
+              void audio.play().catch(() => {});
             }
+
+            await loadMessages(currentUserId);
           }
         )
         .subscribe();
@@ -374,14 +469,18 @@ function MesajlarContent() {
     return () => {
       cancelled = true;
 
-      if (channel) {
-        void supabase.removeChannel(channel);
-      }
+      if (messageChannel) void supabase.removeChannel(messageChannel);
+      if (supportChannel) void supabase.removeChannel(supportChannel);
     };
-  }, [loadMessages, markDelivered, requestedUser, requestedCat]);
+  }, [loadMessages, requestedUser, requestedCat, requestedSupport]);
 
   useEffect(() => {
-    if (!userId || !selectedUser || userId === selectedUser) {
+    if (
+      !userId ||
+      !selectedUser ||
+      selectedUser === SUPPORT_USER ||
+      userId === selectedUser
+    ) {
       setPeerOnline(false);
       setPeerTyping(false);
       liveChannelRef.current = null;
@@ -396,6 +495,7 @@ function MesajlarContent() {
         broadcast: { self: false },
       },
     });
+
     liveChannelRef.current = channel;
 
     channel
@@ -409,28 +509,29 @@ function MesajlarContent() {
         setPeerTyping(Boolean(payload.is_typing));
       })
       .subscribe(async (status) => {
-        console.log("[CHAT LIVE] Kanal durumu:", status);
-
         if (status === "SUBSCRIBED" && !cancelled) {
-          const result = await channel.track({
+          await channel.track({
             user_id: userId,
             online_at: new Date().toISOString(),
           });
-
-          console.log("[CHAT LIVE] Presence sonucu:", result);
-          console.log("[CHAT LIVE] Presence durumu:", channel.presenceState());
         }
       });
 
     return () => {
       cancelled = true;
+
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
         typingTimeoutRef.current = null;
       }
+
       typingActiveRef.current = false;
       setPeerTyping(false);
-      if (liveChannelRef.current === channel) liveChannelRef.current = null;
+
+      if (liveChannelRef.current === channel) {
+        liveChannelRef.current = null;
+      }
+
       void supabase.removeChannel(channel);
     };
   }, [userId, selectedUser]);
@@ -438,10 +539,20 @@ function MesajlarContent() {
   function handleDraftChange(value: string) {
     setDraft(value);
 
-    if (!userId || !selectedUser || userId === selectedUser) return;
+    if (
+      !userId ||
+      !selectedUser ||
+      selectedUser === SUPPORT_USER ||
+      userId === selectedUser
+    ) {
+      return;
+    }
+
     const channel = liveChannelRef.current;
+
     if (channel && !typingActiveRef.current) {
       typingActiveRef.current = true;
+
       void channel.send({
         type: "broadcast",
         event: "typing",
@@ -449,12 +560,15 @@ function MesajlarContent() {
       });
     }
 
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
     typingTimeoutRef.current = setTimeout(() => {
       typingActiveRef.current = false;
-      const activeChannel = liveChannelRef.current;
-      if (activeChannel) {
-        void activeChannel.send({
+
+      if (liveChannelRef.current) {
+        void liveChannelRef.current.send({
           type: "broadcast",
           event: "typing",
           payload: { user_id: userId, is_typing: false },
@@ -495,10 +609,7 @@ function MesajlarContent() {
         message.read_at === null
       ) {
         const current = map.get(key);
-
-        if (current) {
-          current.unreadCount += 1;
-        }
+        if (current) current.unreadCount += 1;
       }
     }
 
@@ -511,8 +622,65 @@ function MesajlarContent() {
       );
   }, [messages, userId, removedCatIds]);
 
+  const supportUnread = supportMessages.filter(
+    (message) => message.sender_role === "team" && message.read_at === null
+  ).length;
+
+  const hasSupportConversation = supportMessages.length > 0 ||
+    selectedUser === SUPPORT_USER;
+
+  const allConversations = useMemo(() => {
+    const normal = conversations.map((conversation) => ({
+      key: `${conversation.userId}:${conversation.catId}`,
+      userId: conversation.userId,
+      catId: conversation.catId,
+      lastBody: conversation.lastMessage.body,
+      lastDate: conversation.lastMessage.created_at,
+      unreadCount: conversation.unreadCount,
+      support: false,
+    }));
+
+    if (hasSupportConversation) {
+      const last = supportMessages[supportMessages.length - 1];
+
+      normal.push({
+        key: "catalog-support",
+        userId: SUPPORT_USER,
+        catId: SUPPORT_CHAT,
+        lastBody: last?.body ?? "CATalog Team ile iletişim",
+        lastDate: last?.created_at ?? new Date(0).toISOString(),
+        unreadCount: supportUnread,
+        support: true,
+      });
+    }
+
+    return normal.sort(
+      (a, b) =>
+        new Date(b.lastDate).getTime() - new Date(a.lastDate).getTime()
+    );
+  }, [conversations, hasSupportConversation, supportMessages, supportUnread]);
+
   useEffect(() => {
-    if (!userId || !selectedUser || !selectedCat) {
+    if (!userId) return;
+
+    if (isSupportConversation) {
+      void markSupportRead(userId);
+    } else if (selectedUser && selectedCat) {
+      void markNormalRead(userId, selectedUser, selectedCat);
+    }
+  }, [
+    userId,
+    selectedUser,
+    selectedCat,
+    isSupportConversation,
+    supportMessages,
+    messages,
+    markSupportRead,
+    markNormalRead,
+  ]);
+
+  useEffect(() => {
+    if (!userId || !selectedUser || !selectedCat || isSupportConversation) {
       setBlockedByMe(false);
       return;
     }
@@ -541,32 +709,53 @@ function MesajlarContent() {
     return () => {
       cancelled = true;
     };
-  }, [userId, selectedUser, selectedCat]);
+  }, [userId, selectedUser, selectedCat, isSupportConversation]);
 
-  useEffect(() => {
-    if (userId && selectedUser && selectedCat) {
-      void markRead(userId, selectedUser, selectedCat);
-    }
-  }, [userId, selectedUser, selectedCat, messages, markRead]);
-
-  const activeMessages = messages.filter(
-    (message) =>
-      message.cat_id === selectedCat &&
-      ((message.sender_id === userId &&
-        message.recipient_id === selectedUser) ||
-        (message.sender_id === selectedUser &&
-          message.recipient_id === userId))
-  );
+  const activeMessages: DisplayMessage[] = isSupportConversation
+    ? supportMessages.map((message) => ({
+        id: message.id,
+        body: message.body,
+        created_at: message.created_at,
+        read_at: message.read_at,
+        delivered_at: null,
+        mine: message.sender_role === "user",
+        support: true,
+      }))
+    : messages
+        .filter(
+          (message) =>
+            message.cat_id === selectedCat &&
+            ((message.sender_id === userId &&
+              message.recipient_id === selectedUser) ||
+              (message.sender_id === selectedUser &&
+                message.recipient_id === userId))
+        )
+        .map((message) => ({
+          id: message.id,
+          body: message.body,
+          created_at: message.created_at,
+          read_at: message.read_at,
+          delivered_at: message.delivered_at,
+          mine: message.sender_id === userId,
+          support: false,
+        }));
 
   const activeProfile = profiles[selectedUser];
   const activeCat = cats[selectedCat];
-  const isListingRemoved = Boolean(selectedCat && removedCatIds.includes(selectedCat));
+
+  const isListingRemoved = Boolean(
+    selectedCat &&
+    selectedCat !== SUPPORT_CHAT &&
+    removedCatIds.includes(selectedCat)
+  );
+
   const isSelfConversation = Boolean(
     userId && selectedUser && selectedUser === userId
   );
 
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
     setError("");
     setNotice("");
 
@@ -574,6 +763,41 @@ function MesajlarContent() {
 
     if (!userId) {
       setError("Mesaj göndermek için giriş yapmalısın.");
+      return;
+    }
+
+    if (!body) return;
+
+    if (body.length > 4000) {
+      setError("Mesaj en fazla 4000 karakter olabilir.");
+      return;
+    }
+
+    if (isSupportConversation) {
+      setSending(true);
+
+      const { error: sendError } = await supabase
+        .from("support_messages")
+        .insert({
+          user_id: userId,
+          sender_role: "user",
+          body,
+        });
+
+      setSending(false);
+
+      if (sendError) {
+        console.error("Destek mesajı gönderilemedi:", sendError);
+        setError("CATalog Team'e mesaj gönderilemedi. Lütfen tekrar dene.");
+        return;
+      }
+
+      setDraft("");
+
+      const audio = new Audio("/sounds/message.mp3");
+      void audio.play().catch(() => {});
+
+      await loadMessages(userId);
       return;
     }
 
@@ -592,12 +816,8 @@ function MesajlarContent() {
       return;
     }
 
-    if (!body) return;
-
     if (blockedByMe) {
-      setError(
-        "Bu kullanıcıyı engelledin. Mesaj göndermek için engeli kaldır."
-      );
+      setError("Bu kullanıcıyı engelledin. Mesaj göndermek için engeli kaldır.");
       return;
     }
 
@@ -620,18 +840,18 @@ function MesajlarContent() {
       return;
     }
 
-    // Mesaj başarıyla gönderildiğinde gönderici tarafında sesi çal.
     const sentAudio = new Audio("/sounds/message.mp3");
-    void sentAudio.play().catch((soundError) => {
-      console.warn("Gönderilen mesaj sesi çalınamadı:", soundError);
-    });
+    void sentAudio.play().catch(() => {});
 
     setDraft("");
+
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = null;
     }
+
     typingActiveRef.current = false;
+
     if (liveChannelRef.current) {
       void liveChannelRef.current.send({
         type: "broadcast",
@@ -639,6 +859,7 @@ function MesajlarContent() {
         payload: { user_id: userId, is_typing: false },
       });
     }
+
     await loadMessages(userId);
   }
 
@@ -685,6 +906,7 @@ function MesajlarContent() {
 
   async function submitReport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
     if (!userId || !selectedUser || isSelfConversation || reportBusy) return;
 
     const details = reportDetails.trim();
@@ -719,37 +941,30 @@ function MesajlarContent() {
     setNotice("Şikâyetin alındı. İncelenmek üzere yönetime iletildi.");
   }
 
-  function selectConversation(conversation: Conversation) {
+  function selectConversation(conversation: {
+    userId: string;
+    catId: string;
+  }) {
     setSelectedUser(conversation.userId);
     setSelectedCat(conversation.catId);
     setDraft("");
     setError("");
     setNotice("");
 
-    window.history.replaceState(
-      null,
-      "",
-      `/mesajlar?user=${encodeURIComponent(
-        conversation.userId
-      )}&cat=${encodeURIComponent(conversation.catId)}`
-    );
+    if (conversation.userId === SUPPORT_USER) {
+      window.history.replaceState(null, "", "/mesajlar?support=1");
+    } else {
+      window.history.replaceState(
+        null,
+        "",
+        `/mesajlar?user=${encodeURIComponent(
+          conversation.userId
+        )}&cat=${encodeURIComponent(conversation.catId)}`
+      );
+    }
   }
-
-  const unreadTotal = conversations.reduce(
-    (sum, conversation) => sum + conversation.unreadCount,
-    0
-  );
 
   const { darkMode, toggleTheme, themeReady } = useTheme();
-
-  function handleThemeToggle() {
-    const sound = new Audio(darkMode ? "/sounds/gündüz.mp3" : "/sounds/gece.mp3");
-    sound.volume = 0.45;
-    void sound.play().catch((soundError) => {
-      console.warn("Tema değiştirme sesi çalınamadı:", soundError);
-    });
-    toggleTheme();
-  }
 
   const palette = darkMode
     ? {
@@ -760,12 +975,12 @@ function MesajlarContent() {
         cardSolid: "#201B29",
         border: "rgba(255,255,255,0.12)",
         soft: "#2A2235",
-        softHover: "#30263D",
         accent: "#A184D5",
         accentText: "#D9C9F0",
         input: "#191521",
         incoming: "#201B29",
         outgoing: "#493567",
+        teamRed: "#FF3030",
       }
     : {
         page: "#FAF8FC",
@@ -775,15 +990,23 @@ function MesajlarContent() {
         cardSolid: "#FFFFFF",
         border: "#ECE5F3",
         soft: "#F0E7F8",
-        softHover: "#F7F2FC",
         accent: "#8060AE",
         accentText: "#624B82",
         input: "#FCFAFE",
         incoming: "#FFFFFF",
         outgoing: "#302542",
+        teamRed: "#8B0000",
       };
 
   const iconPath = (name: string) => `/images/icons/${name}`;
+
+  const selectedCity = isSupportConversation
+    ? "CATalog Destek"
+    : activeProfile?.city?.trim() ||
+      activeCat?.city?.trim() ||
+      (profileErrors.includes(selectedUser)
+        ? "Şehir bilgisi yüklenemedi"
+        : "Şehir belirtilmemiş");
 
   if (loading || !themeReady) {
     return (
@@ -820,7 +1043,14 @@ function MesajlarContent() {
           backgroundSize: "cover",
         }}
       >
-        <div className="pointer-events-none absolute inset-0" style={{ backgroundColor: darkMode ? "rgba(21,18,29,.62)" : "rgba(250,248,252,.45)" }} />
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundColor: darkMode
+              ? "rgba(21,18,29,.62)"
+              : "rgba(250,248,252,.45)",
+          }}
+        />
         <div
           className="relative z-10 mx-auto w-full max-w-md rounded-3xl border p-8 text-center shadow-2xl backdrop-blur-xl"
           style={{ backgroundColor: palette.card, borderColor: palette.border }}
@@ -863,41 +1093,43 @@ function MesajlarContent() {
     >
       <div
         className="pointer-events-none fixed inset-0"
-        style={{ backgroundColor: darkMode ? "rgba(21,18,29,.64)" : "rgba(250,248,252,.48)" }}
+        style={{
+          backgroundColor: darkMode
+            ? "rgba(21,18,29,.64)"
+            : "rgba(250,248,252,.48)",
+        }}
       />
 
       <header
         className="relative z-10 border-b backdrop-blur-xl"
         style={{
-          backgroundColor: darkMode ? "rgba(32,27,41,.92)" : "rgba(255,255,255,.92)",
+          backgroundColor: darkMode
+            ? "rgba(32,27,41,.92)"
+            : "rgba(255,255,255,.92)",
           borderColor: palette.border,
         }}
       >
-        <div className="relative mx-auto flex h-[144px] max-w-7xl items-center justify-between gap-3 px-4 sm:py-0">
-          <Link href="/" aria-label="CATalog ana sayfası" className="relative flex h-full w-[120px] shrink-0 items-center gap-2 transition hover:opacity-80">
+        <div className="relative mx-auto flex h-[112px] max-w-7xl items-center justify-between gap-3 px-4 sm:h-[144px]">
+          <Link
+            href="/"
+            aria-label="CATalog ana sayfası"
+            className="relative flex h-full w-[112px] shrink-0 items-center justify-center transition hover:opacity-80 sm:w-[140px]"
+          >
             <Image
               src={darkMode ? "/images/brand/logo1.png" : "/images/brand/logo2.png"}
               alt="CATalog"
-              width={240}
-              height={240}
-              className="absolute left-1/2 top-1/2 h-[240px] w-[240px] max-w-none -translate-x-1/2 -translate-y-1/2 object-contain"
+              width={220}
+              height={220}
+              className="h-[150px] w-[150px] object-contain sm:h-[220px] sm:w-[220px]"
             />
           </Link>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            {(!selectedUser || !selectedCat) && (
-              <span
-                className="rounded-full px-3 py-1.5 text-xs font-bold"
-                style={{ backgroundColor: palette.soft, color: palette.accentText }}
-              >
-                {unreadTotal} okunmamış
-              </span>
-            )}
             <button
               type="button"
-              onClick={handleThemeToggle}
+              onClick={toggleTheme}
               aria-label={darkMode ? "Gündüz temasına geç" : "Gece temasına geç"}
-              className="flex h-[72px] w-[72px] items-center justify-center rounded-2xl transition hover:scale-105"
+              className="flex h-12 w-12 items-center justify-center rounded-2xl transition hover:scale-105 sm:h-[72px] sm:w-[72px]"
               style={{ backgroundColor: palette.soft }}
             >
               <Image
@@ -905,13 +1137,14 @@ function MesajlarContent() {
                 alt={darkMode ? "Gece teması" : "Gündüz teması"}
                 width={43}
                 height={43}
-                className="object-contain"
+                className="h-8 w-8 object-contain sm:h-11 sm:w-11"
               />
             </button>
+
             <Link
               href="/"
               className="rounded-xl px-3 py-2 text-sm font-semibold transition"
-              style={{ color: palette.muted, backgroundColor: "transparent" }}
+              style={{ color: palette.muted }}
             >
               ← İlanlar
             </Link>
@@ -925,15 +1158,19 @@ function MesajlarContent() {
           style={{ borderColor: palette.border, backgroundColor: palette.card }}
         >
           <aside
-            className={`border-b lg:border-b-0 lg:border-r ${selectedUser && selectedCat ? "hidden lg:block" : ""}`}
+            className={`border-b lg:border-b-0 lg:border-r ${
+              selectedUser && selectedCat ? "hidden lg:block" : ""
+            }`}
             style={{ borderColor: palette.border }}
           >
             <div className="border-b p-5" style={{ borderColor: palette.border }}>
               <h1 className="text-2xl font-black">Mesajlar</h1>
-              <p className="mt-1 text-sm" style={{ color: palette.muted }}>İlan sahipleriyle konuşmaların</p>
+              <p className="mt-1 text-sm" style={{ color: palette.muted }}>
+                Konuşmaların ve CATalog desteği
+              </p>
             </div>
 
-            {conversations.length === 0 ? (
+            {allConversations.length === 0 ? (
               <div className="p-6 text-center">
                 <Image
                   src={iconPath(darkMode ? "kedi1.png" : "kedi2.png")}
@@ -942,32 +1179,36 @@ function MesajlarContent() {
                   height={64}
                   className="mx-auto object-contain"
                 />
-                <p className="mt-3 font-bold">{selectedUser && selectedCat ? "Yeni konuşman" : "Henüz sohbetin yok"}</p>
+                <p className="mt-3 font-bold">Henüz sohbetin yok</p>
                 <p className="mt-2 text-sm leading-6" style={{ color: palette.muted }}>
-                  {selectedUser && selectedCat
-                    ? "İlk mesajını gönderdiğinde konuşman burada listelenecek."
-                    : "Bir kedi ilanını açıp “Mesaj gönder” düğmesine basarak sohbet başlatabilirsin."}
+                  Bir kedi ilanını açıp mesaj göndererek sohbet başlatabilirsin.
                 </p>
-                {!selectedUser && !selectedCat && (
-                  <Link
-                    href="/"
-                    className="mt-5 inline-flex rounded-xl px-4 py-2.5 text-sm font-bold text-white transition hover:opacity-90"
-                    style={{ backgroundColor: palette.accent }}
-                  >
-                    İlanları keşfet
-                  </Link>
-                )}
+                <button
+                  type="button"
+                  onClick={() =>
+                    selectConversation({
+                      userId: SUPPORT_USER,
+                      catId: SUPPORT_CHAT,
+                    })
+                  }
+                  className="mt-5 rounded-xl px-4 py-2.5 text-sm font-bold text-white"
+                  style={{ backgroundColor: palette.teamRed }}
+                >
+                  CATalog Team'e yaz
+                </button>
               </div>
             ) : (
               <div>
-                {conversations.map((conversation) => {
+                {allConversations.map((conversation) => {
                   const profile = profiles[conversation.userId];
                   const cat = cats[conversation.catId];
-                  const last = conversation.lastMessage;
-                  const selected = conversation.userId === selectedUser && conversation.catId === selectedCat;
+                  const selected =
+                    conversation.userId === selectedUser &&
+                    conversation.catId === selectedCat;
+
                   return (
                     <button
-                      key={`${conversation.userId}:${conversation.catId}`}
+                      key={conversation.key}
                       type="button"
                       onClick={() => selectConversation(conversation)}
                       className="flex w-full items-start gap-3 border-b p-4 text-left transition"
@@ -976,27 +1217,99 @@ function MesajlarContent() {
                         backgroundColor: selected ? palette.soft : "transparent",
                       }}
                     >
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl" style={{ backgroundColor: palette.soft }}>
-                        {cat?.photo_urls?.[0] ? (
+                      <div
+                        className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl"
+                        style={{
+                          backgroundColor: conversation.support
+                            ? darkMode ? "#351018" : "#FCE7EA"
+                            : palette.soft,
+                        }}
+                      >
+                        {conversation.support ? (
+                          <Image
+                            src={SUPPORT_LOGO}
+                            alt="CATalog Team"
+                            width={48}
+                            height={48}
+                            className="h-12 w-12 object-contain"
+                          />
+                        ) : cat?.photo_urls?.[0] ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={cat.photo_urls[0]} alt={cat.name} className="h-full w-full object-cover" />
+                          <img
+                            src={cat.photo_urls[0]}
+                            alt={cat.name}
+                            className="h-full w-full object-cover"
+                          />
                         ) : (
-                          <Image src={iconPath(darkMode ? "kedi1.png" : "kedi2.png")} alt="Kedi fotoğrafı yok" width={36} height={36} className="object-contain p-1" />
+                          <Image
+                            src={iconPath(darkMode ? "kedi1.png" : "kedi2.png")}
+                            alt="Kedi fotoğrafı yok"
+                            width={36}
+                            height={36}
+                            className="object-contain p-1"
+                          />
                         )}
                       </div>
+
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
-                          <p className="truncate font-bold">{profile?.display_name?.trim() || "İsimsiz kullanıcı"}</p>
-                          <span className="shrink-0 text-[11px]" style={{ color: palette.muted }}>{formatDate(last.created_at)}</span>
+                          <p
+                            className="truncate font-bold"
+                            style={{
+                              color: conversation.support
+                                ? palette.teamRed
+                                : palette.text,
+                            }}
+                          >
+                            {conversation.support
+                              ? "CATalog Team"
+                              : profile?.display_name?.trim() || "İsimsiz kullanıcı"}
+                          </p>
+                          <span
+                            className="shrink-0 text-[11px]"
+                            style={{ color: palette.muted }}
+                          >
+                            {formatDate(conversation.lastDate)}
+                          </span>
                         </div>
-                        <p className="mt-0.5 truncate text-xs font-semibold" style={{ color: palette.accent }}>{cat?.name || "Kedi ilanı"}</p>
-                        <p className="truncate text-xs" style={{ color: palette.muted }}>{profile?.city?.trim() || "Şehir belirtilmemiş"}</p>
+
+                        <p
+                          className="mt-0.5 truncate text-xs font-semibold"
+                          style={{
+                            color: conversation.support
+                              ? palette.teamRed
+                              : palette.accent,
+                          }}
+                        >
+                          {conversation.support
+                            ? "Resmî destek"
+                            : cat?.name || "Kedi ilanı"}
+                        </p>
+
+                        {!conversation.support && (
+                          <p className="truncate text-xs" style={{ color: palette.muted }}>
+                            {profile?.city?.trim() ||
+                              cat?.city?.trim() ||
+                              (profileErrors.includes(conversation.userId)
+                                ? "Şehir bilgisi yüklenemedi"
+                                : "Şehir belirtilmemiş")}
+                          </p>
+                        )}
+
                         <p className="mt-1 truncate text-sm" style={{ color: palette.muted }}>
-                          {last.sender_id === userId ? "Sen: " : ""}{last.body}
+                          {conversation.lastBody}
                         </p>
                       </div>
+
                       {conversation.unreadCount > 0 && (
-                        <span className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full px-1.5 text-xs font-bold text-white" style={{ backgroundColor: palette.accent }}>
+                        <span
+                          className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full px-1.5 text-xs font-bold text-white"
+                          style={{
+                            backgroundColor: conversation.support
+                              ? palette.teamRed
+                              : palette.accent,
+                          }}
+                        >
                           {conversation.unreadCount}
                         </span>
                       )}
@@ -1005,20 +1318,62 @@ function MesajlarContent() {
                 })}
               </div>
             )}
+
+            {allConversations.length > 0 && (
+              <div className="p-4">
+                <button
+                  type="button"
+                  onClick={() =>
+                    selectConversation({
+                      userId: SUPPORT_USER,
+                      catId: SUPPORT_CHAT,
+                    })
+                  }
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-bold transition hover:opacity-80"
+                  style={{
+                    borderColor: `${palette.teamRed}55`,
+                    color: palette.teamRed,
+                    backgroundColor: darkMode ? "#351018" : "#FCE7EA",
+                  }}
+                >
+                  <Image
+                    src={SUPPORT_LOGO}
+                    alt=""
+                    width={24}
+                    height={24}
+                    className="h-6 w-6 object-contain"
+                  />
+                  CATalog Team ile konuş
+                </button>
+              </div>
+            )}
           </aside>
 
-          <section className={`flex min-h-[75vh] min-w-0 flex-col ${!selectedUser || !selectedCat ? "hidden lg:flex" : ""}`}>
+          <section
+            className={`flex min-h-[75vh] min-w-0 flex-col ${
+              !selectedUser || !selectedCat ? "hidden lg:flex" : ""
+            }`}
+          >
             {!selectedUser || !selectedCat ? (
               <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
-                <Image src={iconPath(darkMode ? "kedi1.png" : "kedi2.png")} alt="" width={88} height={88} className="object-contain" />
+                <Image
+                  src={iconPath(darkMode ? "kedi1.png" : "kedi2.png")}
+                  alt=""
+                  width={88}
+                  height={88}
+                  className="object-contain"
+                />
                 <h2 className="mt-4 text-xl font-black">Mesajların</h2>
                 <p className="mt-2 max-w-sm text-sm leading-6" style={{ color: palette.muted }}>
-                  Soldaki konuşmalardan birini seçebilir veya bir kedi ilanından “Mesaj gönder” düğmesine basabilirsin.
+                  Soldaki konuşmalardan birini seçebilir veya CATalog Team ile iletişime geçebilirsin.
                 </p>
               </div>
             ) : (
               <>
-                <div className="flex flex-col gap-3 border-b p-4 sm:p-5" style={{ borderColor: palette.border }}>
+                <div
+                  className="flex flex-col gap-3 border-b p-4 sm:p-5"
+                  style={{ borderColor: palette.border }}
+                >
                   <div className="flex min-w-0 items-center gap-3">
                     <button
                       type="button"
@@ -1036,223 +1391,498 @@ function MesajlarContent() {
                     >
                       ←
                     </button>
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full" style={{ backgroundColor: palette.soft }}>
-                      {activeProfile?.avatar_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={activeProfile.avatar_url} alt="" className="h-full w-full object-cover" />
-                      ) : (
-                        <Image src={iconPath(darkMode ? "user ikonu.png" : "user ikonu2.png")} alt="Profil fotoğrafı yok" width={42} height={42} className="object-contain p-1" />
+
+                    {isSupportConversation ? (
+                      <div
+                        className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full"
+                        style={{
+                          backgroundColor: darkMode ? "#351018" : "#FCE7EA",
+                        }}
+                      >
+                        <Image
+                          src={SUPPORT_LOGO}
+                          alt="CATalog Team"
+                          width={48}
+                          height={48}
+                          className="h-12 w-12 object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div
+                        className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full"
+                        style={{ backgroundColor: palette.soft }}
+                      >
+                        {activeProfile?.avatar_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={activeProfile.avatar_url}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <Image
+                            src={iconPath(darkMode ? "user ikonu.png" : "user ikonu2.png")}
+                            alt="Profil fotoğrafı yok"
+                            width={42}
+                            height={42}
+                            className="object-contain p-1"
+                          />
+                        )}
+                      </div>
+                    )}
+
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className="truncate font-black"
+                        style={{
+                          color: isSupportConversation
+                            ? palette.teamRed
+                            : palette.text,
+                        }}
+                      >
+                        {isSupportConversation
+                          ? "CATalog Team"
+                          : activeProfile?.display_name?.trim() || "İsimsiz kullanıcı"}
+                      </p>
+
+                      <p className="truncate text-xs" style={{ color: palette.muted }}>
+                        {selectedCity}
+                      </p>
+
+                      {!isSupportConversation && (
+                        <p
+                          className="mt-0.5 flex items-center gap-1.5 text-xs"
+                          style={{ color: peerOnline ? "#16A34A" : palette.muted }}
+                        >
+                          <span
+                            className="inline-block h-2 w-2 rounded-full"
+                            style={{
+                              backgroundColor: peerOnline ? "#22C55E" : "#9CA3AF",
+                            }}
+                          />
+                          {peerTyping
+                            ? "Yazıyor..."
+                            : peerOnline
+                              ? "Çevrimiçi"
+                              : "Çevrimdışı"}
+                        </p>
                       )}
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-black">{activeProfile?.display_name?.trim() || "İsimsiz kullanıcı"}</p>
-                      <p className="truncate text-xs" style={{ color: palette.muted }}>{activeProfile?.city?.trim() || "Şehir belirtilmemiş"}</p>
-                      <p className="mt-0.5 flex items-center gap-1.5 text-xs" style={{ color: peerOnline ? "#16A34A" : palette.muted }}>
-                        <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: peerOnline ? "#22C55E" : "#9CA3AF" }} />
-                        {peerTyping ? "Yazıyor..." : peerOnline ? "Çevrimiçi" : "Çevrimdışı"}
-                      </p>
+                  </div>
+
+                  {!isSupportConversation && (
+                    <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setError("");
+                          setNotice("");
+                          setReportOpen(true);
+                        }}
+                        disabled={isSelfConversation}
+                        className="flex min-h-12 items-center justify-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm font-extrabold shadow-sm transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-14 sm:gap-3 sm:text-base"
+                        style={{
+                          borderColor: palette.border,
+                          color: palette.accentText,
+                          backgroundColor: palette.soft,
+                        }}
+                        aria-label="Kullanıcıyı şikâyet et"
+                      >
+                        <Image
+                          src={`/images/icons/${darkMode ? "şikayet.png" : "şikayet2.png"}`}
+                          alt=""
+                          width={36}
+                          height={36}
+                          className="h-8 w-8 shrink-0 object-contain sm:h-9 sm:w-9"
+                        />
+                        <span>Şikâyet et</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => void toggleBlock()}
+                        disabled={blockBusy || isSelfConversation}
+                        className="flex min-h-12 items-center justify-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm font-extrabold shadow-sm transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-14 sm:gap-3 sm:text-base"
+                        style={{
+                          borderColor: palette.border,
+                          color: palette.accentText,
+                          backgroundColor: palette.soft,
+                        }}
+                        aria-label={blockedByMe ? "Engeli kaldır" : "Kullanıcıyı engelle"}
+                      >
+                        <Image
+                          src={`/images/icons/${darkMode ? "engelle.png" : "engelle2.png"}`}
+                          alt=""
+                          width={36}
+                          height={36}
+                          className="h-8 w-8 shrink-0 object-contain sm:h-9 sm:w-9"
+                        />
+                        <span>
+                          {blockBusy
+                            ? "Bekleyin..."
+                            : blockedByMe
+                              ? "Engeli kaldır"
+                              : "Engelle"}
+                        </span>
+                      </button>
                     </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setError("");
-                        setNotice("");
-                        setReportOpen(true);
-                      }}
-                      disabled={isSelfConversation}
-                      className="flex min-h-12 items-center justify-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm font-extrabold shadow-sm transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-14 sm:gap-3 sm:text-base"
-                      style={{ borderColor: palette.border, color: palette.accentText, backgroundColor: palette.soft }}
-                      aria-label="Kullanıcıyı şikâyet et"
-                    >
-                      <Image
-                        src={`/images/icons/${darkMode ? "şikayet.png" : "şikayet2.png"}`}
-                        alt=""
-                        width={36}
-                        height={36}
-                        className="h-8 w-8 shrink-0 object-contain sm:h-9 sm:w-9"
-                      />
-                      <span>Şikâyet et</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void toggleBlock()}
-                      disabled={blockBusy || isSelfConversation}
-                      className="flex min-h-12 items-center justify-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm font-extrabold shadow-sm transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-14 sm:gap-3 sm:text-base"
-                      style={{ borderColor: palette.border, color: palette.accentText, backgroundColor: palette.soft }}
-                      aria-label={blockedByMe ? "Kullanıcının engelini kaldır" : "Kullanıcıyı engelle"}
-                    >
-                      <Image
-                        src={`/images/icons/${darkMode ? "engelle.png" : "engelle2.png"}`}
-                        alt=""
-                        width={36}
-                        height={36}
-                        className="h-8 w-8 shrink-0 object-contain sm:h-9 sm:w-9"
-                      />
-                      <span>{blockBusy ? "Bekleyin..." : blockedByMe ? "Engeli kaldır" : "Engelle"}</span>
-                    </button>
-                  </div>
+                  )}
                 </div>
 
-                {activeCat && !isListingRemoved && (
+                {activeCat && !isListingRemoved && !isSupportConversation && (
                   <Link
                     href={`/kediler/${activeCat.id}`}
                     className="flex items-center gap-3 border-b px-4 py-3 transition"
-                    style={{ borderColor: palette.border, backgroundColor: darkMode ? "rgba(42,34,53,.78)" : "rgba(252,250,254,.9)" }}
+                    style={{
+                      borderColor: palette.border,
+                      backgroundColor: darkMode
+                        ? "rgba(42,34,53,.78)"
+                        : "rgba(252,250,254,.9)",
+                    }}
                   >
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl" style={{ backgroundColor: palette.soft }}>
+                    <div
+                      className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl"
+                      style={{ backgroundColor: palette.soft }}
+                    >
                       {activeCat.photo_urls?.[0] ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={activeCat.photo_urls[0]} alt={activeCat.name} className="h-full w-full object-cover" />
+                        <img
+                          src={activeCat.photo_urls[0]}
+                          alt={activeCat.name}
+                          className="h-full w-full object-cover"
+                        />
                       ) : (
-                        <Image src={iconPath(darkMode ? "kedi1.png" : "kedi2.png")} alt="Kedi fotoğrafı yok" width={34} height={34} className="object-contain p-1" />
+                        <Image
+                          src={iconPath(darkMode ? "kedi1.png" : "kedi2.png")}
+                          alt="Kedi fotoğrafı yok"
+                          width={34}
+                          height={34}
+                          className="object-contain p-1"
+                        />
                       )}
                     </div>
+
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs" style={{ color: palette.muted }}>İlan hakkında konuşuyorsunuz</p>
+                      <p className="text-xs" style={{ color: palette.muted }}>
+                        İlan hakkında konuşuyorsunuz
+                      </p>
                       <p className="truncate text-sm font-bold">{activeCat.name}</p>
                     </div>
-                    <span className="flex shrink-0 items-center gap-1 text-sm font-extrabold sm:text-base" style={{ color: palette.accent }}><span>İlanı gör</span><span aria-hidden="true" className="text-xl leading-none sm:text-2xl">→</span></span>
+
+                    <span
+                      className="flex shrink-0 items-center gap-1 text-sm font-extrabold sm:text-base"
+                      style={{ color: palette.accent }}
+                    >
+                      İlanı gör <span aria-hidden="true">→</span>
+                    </span>
                   </Link>
                 )}
 
                 {isListingRemoved ? (
-                  <div
-                    className="flex flex-1 items-center justify-center p-6"
-                    style={{ backgroundColor: darkMode ? "rgba(21,18,29,.38)" : "rgba(252,250,254,.72)" }}
-                  >
+                  <div className="flex flex-1 items-center justify-center p-6">
                     <div
-                      className="w-full max-w-md rounded-3xl border p-8 text-center shadow-sm backdrop-blur-sm"
-                      style={{ borderColor: palette.border, backgroundColor: palette.card }}
+                      className="w-full max-w-md rounded-3xl border p-8 text-center shadow-sm"
+                      style={{
+                        borderColor: palette.border,
+                        backgroundColor: palette.card,
+                      }}
                     >
-                      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl text-3xl" style={{ backgroundColor: palette.soft }}>
+                      <div
+                        className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl text-3xl"
+                        style={{ backgroundColor: palette.soft }}
+                      >
                         🐾
                       </div>
                       <h2 className="mt-4 text-xl font-black">Bu ilan kaldırıldı</h2>
                       <p className="mt-2 text-sm leading-6" style={{ color: palette.muted }}>
-                        Bu ilana ait sohbet artık kullanılamıyor. Yeni mesaj gönderemezsin.
+                        Bu ilana ait sohbet artık kullanılamıyor.
                       </p>
                     </div>
                   </div>
                 ) : (
-                <div
-                  className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6"
-                  style={{ backgroundColor: darkMode ? "rgba(21,18,29,.38)" : "rgba(252,250,254,.72)" }}
-                >
-                  {activeMessages.length === 0 && (
-                    <div className="mx-auto mt-10 max-w-md rounded-3xl border p-8 text-center shadow-sm backdrop-blur-sm" style={{ borderColor: palette.border, backgroundColor: palette.card }}>
-                      <Image src={iconPath(darkMode ? "kedi1.png" : "kedi2.png")} alt="" width={64} height={64} className="mx-auto object-contain" />
-                      <h2 className="mt-4 text-xl font-black">{activeCat ? `${activeCat.name} hakkında konuş` : "Yeni konuşma"}</h2>
-                      <p className="mt-2 text-sm leading-6" style={{ color: palette.muted }}>
-                        Henüz mesaj yok. Aşağıdaki alana mesajını yazıp gönderebilirsin.
-                      </p>
-                    </div>
-                  )}
-
-                  {activeMessages.map((message, index) => {
-                    const mine = message.sender_id === userId;
-                    const previous = activeMessages[index - 1];
-                    const showDate = !previous || new Date(previous.created_at).toDateString() !== new Date(message.created_at).toDateString();
-                    const tickIcon = message.read_at
-                      ? (darkMode ? "mavitik.png" : "mavitik2.png")
-                      : message.delivered_at
-                        ? (darkMode ? "çifttik.png" : "çifttik2.png")
-                        : (darkMode ? "tektik.png" : "tektik2.png");
-                    const tickLabel = message.read_at ? "Okundu" : message.delivered_at ? "Teslim edildi" : "Gönderildi";
-
-                    return (
-                      <div key={message.id}>
-                        {showDate && (
-                          <div className="my-4 text-center">
-                            <span className="rounded-full border px-3 py-1 text-[11px] font-semibold shadow-sm" style={{ borderColor: palette.border, backgroundColor: palette.card, color: palette.muted }}>
-                              {new Date(message.created_at).toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" })}
-                            </span>
-                          </div>
+                  <div
+                    className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6"
+                    style={{
+                      backgroundColor: darkMode
+                        ? "rgba(21,18,29,.38)"
+                        : "rgba(252,250,254,.72)",
+                    }}
+                  >
+                    {activeMessages.length === 0 && (
+                      <div
+                        className="mx-auto mt-10 max-w-md rounded-3xl border p-8 text-center shadow-sm"
+                        style={{
+                          borderColor: palette.border,
+                          backgroundColor: palette.card,
+                        }}
+                      >
+                        {isSupportConversation ? (
+                          <Image
+                            src={SUPPORT_LOGO}
+                            alt="CATalog Team"
+                            width={72}
+                            height={72}
+                            className="mx-auto object-contain"
+                          />
+                        ) : (
+                          <Image
+                            src={iconPath(darkMode ? "kedi1.png" : "kedi2.png")}
+                            alt=""
+                            width={64}
+                            height={64}
+                            className="mx-auto object-contain"
+                          />
                         )}
-                        <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-                          <div
-                            className="max-w-[85%] break-words rounded-2xl px-4 py-3 shadow-sm sm:max-w-[75%]"
-                            style={{
-                              borderBottomRightRadius: mine ? 5 : 18,
-                              borderBottomLeftRadius: mine ? 18 : 5,
-                              backgroundColor: mine ? palette.outgoing : palette.incoming,
-                              color: mine ? "#FFFFFF" : palette.text,
-                              border: mine ? "1px solid transparent" : `1px solid ${palette.border}`,
-                            }}
-                          >
-                            <p className="whitespace-pre-wrap text-sm leading-6">{message.body}</p>
-                            <div className="mt-1.5 flex items-center justify-end gap-1.5 text-[10px]" style={{ color: mine ? "#D9CDEB" : palette.muted }}>
-                              <span>{formatTime(message.created_at)}</span>
-                              {mine && (
-                                <Image
-                                  src={iconPath(tickIcon)}
-                                  alt={tickLabel}
-                                  title={tickLabel}
-                                  width={20}
-                                  height={14}
-                                  className="h-3.5 w-5 object-contain"
-                                />
+
+                        <h2 className="mt-4 text-xl font-black">
+                          {isSupportConversation
+                            ? "CATalog Team"
+                            : activeCat
+                              ? `${activeCat.name} hakkında konuş`
+                              : "Yeni konuşma"}
+                        </h2>
+
+                        <p className="mt-2 text-sm leading-6" style={{ color: palette.muted }}>
+                          {isSupportConversation
+                            ? "Sorularını ve geri bildirimlerini buradan bize iletebilirsin."
+                            : "Henüz mesaj yok. Aşağıdaki alana mesajını yazıp gönderebilirsin."}
+                        </p>
+                      </div>
+                    )}
+
+                    {activeMessages.map((message, index) => {
+                      const previous = activeMessages[index - 1];
+                      const showDate =
+                        !previous ||
+                        new Date(previous.created_at).toDateString() !==
+                          new Date(message.created_at).toDateString();
+
+                      const tickIcon = message.read_at
+                        ? darkMode ? "mavitik.png" : "mavitik2.png"
+                        : message.delivered_at
+                          ? darkMode ? "çifttik.png" : "çifttik2.png"
+                          : darkMode ? "tektik.png" : "tektik2.png";
+
+                      const tickLabel = message.read_at
+                        ? "Okundu"
+                        : message.delivered_at
+                          ? "Teslim edildi"
+                          : "Gönderildi";
+
+                      return (
+                        <div key={message.id}>
+                          {showDate && (
+                            <div className="my-4 text-center">
+                              <span
+                                className="rounded-full border px-3 py-1 text-[11px] font-semibold shadow-sm"
+                                style={{
+                                  borderColor: palette.border,
+                                  backgroundColor: palette.card,
+                                  color: palette.muted,
+                                }}
+                              >
+                                {new Date(message.created_at).toLocaleDateString(
+                                  "tr-TR",
+                                  {
+                                    day: "numeric",
+                                    month: "long",
+                                    year: "numeric",
+                                  }
+                                )}
+                              </span>
+                            </div>
+                          )}
+
+                          <div className={`flex ${message.mine ? "justify-end" : "justify-start"}`}>
+                            <div
+                              className="max-w-[85%] break-words rounded-2xl px-4 py-3 shadow-sm sm:max-w-[75%]"
+                              style={{
+                                borderBottomRightRadius: message.mine ? 5 : 18,
+                                borderBottomLeftRadius: message.mine ? 18 : 5,
+                                backgroundColor: message.mine
+                                  ? isSupportConversation
+                                    ? palette.teamRed
+                                    : palette.outgoing
+                                  : palette.incoming,
+                                color: message.mine ? "#FFFFFF" : palette.text,
+                                border: message.mine
+                                  ? "1px solid transparent"
+                                  : `1px solid ${palette.border}`,
+                              }}
+                            >
+                              {isSupportConversation && !message.mine && (
+                                <p
+                                  className="mb-1 text-[11px] font-black"
+                                  style={{ color: palette.teamRed }}
+                                >
+                                  CATalog Team
+                                </p>
                               )}
+
+                              <p className="whitespace-pre-wrap text-sm leading-6">
+                                {message.body}
+                              </p>
+
+                              <div
+                                className="mt-1.5 flex items-center justify-end gap-1.5 text-[10px]"
+                                style={{
+                                  color: message.mine ? "#F6DDE0" : palette.muted,
+                                }}
+                              >
+                                <span>{formatTime(message.created_at)}</span>
+
+                                {message.mine && !isSupportConversation && (
+                                  <Image
+                                    src={iconPath(tickIcon)}
+                                    alt={tickLabel}
+                                    title={tickLabel}
+                                    width={20}
+                                    height={14}
+                                    className="h-3.5 w-5 object-contain"
+                                  />
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                  {peerTyping && (
-                    <div className="flex justify-start" aria-live="polite" aria-label="Karşı taraf yazıyor">
+                      );
+                    })}
+
+                    {peerTyping && !isSupportConversation && (
                       <div
-                        className="flex items-center gap-2 rounded-2xl border px-3 py-2 shadow-sm"
-                        style={{ backgroundColor: palette.incoming, borderColor: palette.border }}
+                        className="flex justify-start"
+                        aria-live="polite"
+                        aria-label="Karşı taraf yazıyor"
                       >
-                        {/* Public GIF is intentionally rendered with img to preserve animation. */}
-                        <img src="/animation/mesaj.gif" alt="Karşı taraf yazıyor" className="h-8 w-12 object-contain" />
-                        <span className="text-xs" style={{ color: palette.muted }}>Yazıyor...</span>
+                        <div
+                          className="flex items-center gap-2 rounded-2xl border px-3 py-2 shadow-sm"
+                          style={{
+                            backgroundColor: palette.incoming,
+                            borderColor: palette.border,
+                          }}
+                        >
+                          <img
+                            src="/animation/mesaj.gif"
+                            alt="Karşı taraf yazıyor"
+                            className="h-8 w-12 object-contain"
+                          />
+                          <span className="text-xs" style={{ color: palette.muted }}>
+                            Yazıyor...
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
                 )}
 
-                {!isListingRemoved && isSelfConversation && (
-                  <p className="border-t px-4 py-2 text-sm" style={{ borderColor: "#D97706", backgroundColor: darkMode ? "#382719" : "#FFFBEB", color: darkMode ? "#FCD9A5" : "#92400E" }}>
-                    Bu ilan senin hesabına ait. Kendine mesaj gönderemezsin. Mesajlaşmayı başka bir kullanıcı hesabıyla test et.
+                {!isSupportConversation && !isListingRemoved && isSelfConversation && (
+                  <p
+                    className="border-t px-4 py-2 text-sm"
+                    style={{
+                      borderColor: "#D97706",
+                      backgroundColor: darkMode ? "#382719" : "#FFFBEB",
+                      color: darkMode ? "#FCD9A5" : "#92400E",
+                    }}
+                  >
+                    Bu ilan senin hesabına ait. Kendine mesaj gönderemezsin.
                   </p>
                 )}
-                {!isListingRemoved && blockedByMe && !isSelfConversation && (
-                  <p className="border-t px-4 py-2 text-sm" style={{ borderColor: palette.border, backgroundColor: palette.soft, color: palette.muted }}>
+
+                {!isSupportConversation && !isListingRemoved && blockedByMe && !isSelfConversation && (
+                  <p
+                    className="border-t px-4 py-2 text-sm"
+                    style={{
+                      borderColor: palette.border,
+                      backgroundColor: palette.soft,
+                      color: palette.muted,
+                    }}
+                  >
                     Bu kullanıcıyı engelledin. Mesaj göndermek için önce engeli kaldır.
                   </p>
                 )}
-                {!isListingRemoved && error && <p className="border-t border-red-400/30 bg-red-500/10 px-4 py-2 text-sm text-red-500">{error}</p>}
-                {!isListingRemoved && notice && <p className="border-t px-4 py-2 text-sm" style={{ borderColor: palette.border, backgroundColor: palette.soft, color: palette.accentText }}>{notice}</p>}
 
-                {!isListingRemoved && <form onSubmit={sendMessage} className="border-t p-3 sm:p-4" style={{ borderColor: palette.border, backgroundColor: palette.cardSolid }}>
-                  <div className="flex items-end gap-2">
-                    <textarea
-                      value={draft}
-                      onChange={(event) => handleDraftChange(event.target.value)}
-                      placeholder={isSelfConversation ? "Kendi hesabına mesaj gönderemezsin" : blockedByMe ? "Mesaj göndermek için engeli kaldır" : "Mesajını yaz..."}
-                      rows={2}
-                      maxLength={4000}
-                      disabled={sending || blockedByMe || isSelfConversation}
-                      className="max-h-36 min-h-12 flex-1 resize-y rounded-2xl border px-4 py-3 text-sm outline-none transition placeholder:text-[#A19AAA] focus:border-[#A184D5] disabled:opacity-60"
-                      style={{ borderColor: palette.border, backgroundColor: palette.input, color: palette.text }}
-                    />
-                    <button
-                      type="submit"
-                      disabled={sending || blockedByMe || isSelfConversation || !draft.trim()}
-                      className="min-h-12 rounded-2xl px-4 py-3 text-sm font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                      style={{ backgroundColor: palette.accent }}
-                    >
-                      {sending ? "Gönderiliyor..." : "Gönder"}
-                    </button>
-                  </div>
-                  <p className="mt-2 text-[11px]" style={{ color: palette.muted }}>
-                    Mesajların bu ilanla ilişkili olarak kaydedilir.
+                {error && (
+                  <p className="border-t border-red-400/30 bg-red-500/10 px-4 py-2 text-sm text-red-500">
+                    {error}
                   </p>
-                </form>}
+                )}
+
+                {notice && (
+                  <p
+                    className="border-t px-4 py-2 text-sm"
+                    style={{
+                      borderColor: palette.border,
+                      backgroundColor: palette.soft,
+                      color: palette.accentText,
+                    }}
+                  >
+                    {notice}
+                  </p>
+                )}
+
+                {!isListingRemoved && (
+                  <form
+                    onSubmit={sendMessage}
+                    className="border-t p-3 sm:p-4"
+                    style={{
+                      borderColor: palette.border,
+                      backgroundColor: palette.cardSolid,
+                    }}
+                  >
+                    <div className="flex items-end gap-2">
+                      <textarea
+                        value={draft}
+                        onChange={(event) => handleDraftChange(event.target.value)}
+                        placeholder={
+                          isSupportConversation
+                            ? "CATalog Team'e mesajını yaz..."
+                            : isSelfConversation
+                              ? "Kendi hesabına mesaj gönderemezsin"
+                              : blockedByMe
+                                ? "Mesaj göndermek için engeli kaldır"
+                                : "Mesajını yaz..."
+                        }
+                        rows={2}
+                        maxLength={4000}
+                        disabled={
+                          sending ||
+                          (!isSupportConversation &&
+                            (blockedByMe || isSelfConversation))
+                        }
+                        className="max-h-36 min-h-12 flex-1 resize-y rounded-2xl border px-4 py-3 text-sm outline-none transition placeholder:text-[#A19AAA] focus:border-[#A184D5] disabled:opacity-60"
+                        style={{
+                          borderColor: palette.border,
+                          backgroundColor: palette.input,
+                          color: palette.text,
+                        }}
+                      />
+
+                      <button
+                        type="submit"
+                        disabled={
+                          sending ||
+                          !draft.trim() ||
+                          (!isSupportConversation &&
+                            (blockedByMe || isSelfConversation))
+                        }
+                        className="min-h-12 rounded-2xl px-4 py-3 text-sm font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                        style={{
+                          backgroundColor: isSupportConversation
+                            ? palette.teamRed
+                            : palette.accent,
+                        }}
+                      >
+                        {sending ? "Gönderiliyor..." : "Gönder"}
+                      </button>
+                    </div>
+
+                    <p className="mt-2 text-[11px]" style={{ color: palette.muted }}>
+                      {isSupportConversation
+                        ? "Destek mesajların CATalog Team'e iletilir."
+                        : "Mesajların bu ilanla ilişkili olarak kaydedilir."}
+                    </p>
+                  </form>
+                )}
               </>
             )}
           </section>
@@ -1263,7 +1893,9 @@ function MesajlarContent() {
         <div
           className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 px-4 py-8"
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !reportBusy) setReportOpen(false);
+            if (event.target === event.currentTarget && !reportBusy) {
+              setReportOpen(false);
+            }
           }}
         >
           <section
@@ -1271,15 +1903,22 @@ function MesajlarContent() {
             aria-modal="true"
             aria-labelledby="report-dialog-title"
             className="my-auto w-full max-w-md rounded-3xl border p-5 shadow-2xl sm:p-6"
-            style={{ backgroundColor: palette.cardSolid, borderColor: palette.border, color: palette.text }}
+            style={{
+              backgroundColor: palette.cardSolid,
+              borderColor: palette.border,
+              color: palette.text,
+            }}
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 id="report-dialog-title" className="text-xl font-black">Kullanıcıyı şikâyet et</h2>
+                <h2 id="report-dialog-title" className="text-xl font-black">
+                  Kullanıcıyı şikâyet et
+                </h2>
                 <p className="mt-1 text-sm leading-6" style={{ color: palette.muted }}>
                   Şikâyetini inceleyebilmemiz için uygun nedeni seç ve gerekiyorsa ayrıntı ekle.
                 </p>
               </div>
+
               <button
                 type="button"
                 onClick={() => setReportOpen(false)}
@@ -1294,13 +1933,20 @@ function MesajlarContent() {
 
             <form onSubmit={submitReport} className="mt-5 space-y-4">
               <div>
-                <label htmlFor="report-reason" className="mb-2 block text-sm font-semibold">Şikâyet nedeni</label>
+                <label htmlFor="report-reason" className="mb-2 block text-sm font-semibold">
+                  Şikâyet nedeni
+                </label>
+
                 <select
                   id="report-reason"
                   value={reportReason}
                   onChange={(event) => setReportReason(event.target.value)}
                   className="w-full rounded-xl border px-3 py-3 text-sm outline-none focus:border-[#A184D5]"
-                  style={{ borderColor: palette.border, backgroundColor: palette.input, color: palette.text }}
+                  style={{
+                    borderColor: palette.border,
+                    backgroundColor: palette.input,
+                    color: palette.text,
+                  }}
                   disabled={reportBusy}
                   required
                 >
@@ -1314,7 +1960,10 @@ function MesajlarContent() {
               </div>
 
               <div>
-                <label htmlFor="report-details" className="mb-2 block text-sm font-semibold">Açıklama (isteğe bağlı)</label>
+                <label htmlFor="report-details" className="mb-2 block text-sm font-semibold">
+                  Açıklama (isteğe bağlı)
+                </label>
+
                 <textarea
                   id="report-details"
                   value={reportDetails}
@@ -1323,9 +1972,14 @@ function MesajlarContent() {
                   maxLength={850}
                   placeholder="Yaşadığın durumu kısaca açıkla..."
                   className="w-full resize-y rounded-xl border px-3 py-3 text-sm outline-none focus:border-[#A184D5]"
-                  style={{ borderColor: palette.border, backgroundColor: palette.input, color: palette.text }}
+                  style={{
+                    borderColor: palette.border,
+                    backgroundColor: palette.input,
+                    color: palette.text,
+                  }}
                   disabled={reportBusy}
                 />
+
                 <p className="mt-1 text-right text-xs" style={{ color: palette.muted }}>
                   {reportDetails.length}/850
                 </p>
@@ -1341,6 +1995,7 @@ function MesajlarContent() {
                 >
                   Vazgeç
                 </button>
+
                 <button
                   type="submit"
                   disabled={reportBusy}
