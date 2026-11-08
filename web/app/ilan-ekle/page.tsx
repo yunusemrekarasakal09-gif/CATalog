@@ -125,6 +125,9 @@ export default function IlanEklePage() {
   const [pedigree, setPedigree] = useState("");
   const [allowPhoneCalls, setAllowPhoneCalls] = useState("");
   const [photos, setPhotos] = useState<File[]>([]);
+  const [existingPhotos, setExistingPhotos] = useState<string[]>([]);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -191,6 +194,58 @@ export default function IlanEklePage() {
     return () => controller.abort();
   }, []);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedEditId = params.get("edit");
+    if (!requestedEditId) return;
+
+    let cancelled = false;
+    async function loadListingForEdit() {
+      setEditLoading(true);
+      setError("");
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (cancelled) return;
+      if (authError || !user) {
+        setError("İlanını düzenlemek için önce giriş yapmalısın.");
+        setEditLoading(false);
+        return;
+      }
+
+      const { data, error: listingError } = await supabase
+        .from("cats")
+        .select("id, owner_id, name, breed, age_years, gender, color, city, description, phone, pedigree, allow_phone_calls, photo_urls")
+        .eq("id", requestedEditId)
+        .eq("owner_id", user.id)
+        .maybeSingle();
+
+      if (cancelled) return;
+      if (listingError || !data) {
+        setError("Bu ilanı düzenleme yetkin yok veya ilan bulunamadı.");
+        setEditLoading(false);
+        return;
+      }
+
+      const [savedCity, ...savedDistrict] = String(data.city ?? "").split(",");
+      setEditId(data.id);
+      setName(data.name ?? "");
+      setBreed(data.breed ?? "");
+      setAge(data.age_years == null ? "" : String(data.age_years));
+      setGender(data.gender ?? "");
+      setColor(data.color ?? "");
+      setCity(savedCity.trim());
+      setDistrict(savedDistrict.join(",").trim());
+      setDescription(data.description ?? "");
+      setPhone(data.phone ?? "");
+      setPedigree(data.pedigree == null ? "" : String(data.pedigree));
+      setAllowPhoneCalls(data.allow_phone_calls == null ? "" : String(data.allow_phone_calls));
+      setExistingPhotos(Array.isArray(data.photo_urls) ? data.photo_urls.filter(Boolean) : []);
+      setEditLoading(false);
+    }
+
+    void loadListingForEdit();
+    return () => { cancelled = true; };
+  }, []);
+
   const selectedProvince = provinces.find((province) => province.name === city);
   const districtOptions = selectedProvince?.districts ?? [];
 
@@ -248,7 +303,7 @@ export default function IlanEklePage() {
 
     if (selectedFiles.length === 0) return;
 
-    if (photos.length + selectedFiles.length > MAX_PHOTOS) {
+    if (existingPhotos.length + photos.length + selectedFiles.length > MAX_PHOTOS) {
       setError(`Bir ilana en fazla ${MAX_PHOTOS} fotoğraf ekleyebilirsin.`);
       event.target.value = "";
       return;
@@ -329,8 +384,8 @@ export default function IlanEklePage() {
       return;
     }
 
-    if (photos.length < MIN_PHOTOS || photos.length > MAX_PHOTOS) {
-      setError(`İlanına en az ${MIN_PHOTOS}, en fazla ${MAX_PHOTOS} fotoğraf eklemelisin.`);
+    if (existingPhotos.length + photos.length < MIN_PHOTOS || existingPhotos.length + photos.length > MAX_PHOTOS) {
+      setError(`İlanında en az ${MIN_PHOTOS}, en fazla ${MAX_PHOTOS} fotoğraf bulunmalı.`);
       return;
     }
 
@@ -380,8 +435,7 @@ export default function IlanEklePage() {
         photoUrls.push(publicUrlData.publicUrl);
       }
 
-      const { error: insertError } = await supabase.from("cats").insert({
-        owner_id: user.id,
+      const listingPayload = {
         name: name.trim(),
         breed,
         age_years: parsedAge,
@@ -389,30 +443,46 @@ export default function IlanEklePage() {
         color: color.trim(),
         city: `${city}, ${district}`,
         description: description.trim(),
-        photo_urls: photoUrls,
+        photo_urls: [...existingPhotos, ...photoUrls],
         pedigree: pedigree === "true",
         allow_phone_calls: allowPhoneCalls === "true",
         phone: allowPhoneCalls === "true" ? phone.trim() : null,
-        is_active: true,
-      });
+      };
 
-      if (insertError) {
-        throw new Error(`İlan kaydedilemedi: ${insertError.message}`);
+      if (editId) {
+        const { error: updateError } = await supabase
+          .from("cats")
+          .update(listingPayload)
+          .eq("id", editId)
+          .eq("owner_id", user.id);
+        if (updateError) throw new Error(`İlan güncellenemedi: ${updateError.message}`);
+      } else {
+        const { error: insertError } = await supabase.from("cats").insert({
+          owner_id: user.id,
+          ...listingPayload,
+          is_active: true,
+        });
+        if (insertError) throw new Error(`İlan kaydedilemedi: ${insertError.message}`);
       }
 
-      setMessage("İlanın başarıyla oluşturuldu!");
-      setName("");
-      setBreed("");
-      setAge("");
-      setGender("");
-      setColor("");
-      setCity("");
-      setDistrict("");
-      setDescription("");
-      setPhone("");
-      setPedigree("");
-      setAllowPhoneCalls("");
-      setPhotos([]);
+      setMessage(editId ? "İlanın başarıyla güncellendi!" : "İlanın başarıyla oluşturuldu!");
+      if (!editId) {
+        setName("");
+        setBreed("");
+        setAge("");
+        setGender("");
+        setColor("");
+        setCity("");
+        setDistrict("");
+        setDescription("");
+        setPhone("");
+        setPedigree("");
+        setAllowPhoneCalls("");
+        setPhotos([]);
+      } else {
+        setPhotos([]);
+        setExistingPhotos((current) => current);
+      }
     } catch (caughtError) {
       if (uploadedPaths.length > 0) {
         await supabase.storage.from("cat-photos").remove(uploadedPaths);
@@ -514,12 +584,14 @@ export default function IlanEklePage() {
               CAT-ALOG İLANLARI
             </p>
             <h2 className="text-2xl font-black sm:text-3xl">
-              Kedini tanıt
+              {editId ? "İlanını düzenle" : "Kedini tanıt"}
             </h2>
             <p className="mt-2 text-sm leading-6" style={{ color: mutedColor }}>
-              Kedinin bilgilerini gir, fotoğraflarını ekle ve ilanını oluştur.
+              {editId ? "İlan bilgilerini güncelle, değişikliklerini kaydet." : "Kedinin bilgilerini gir, fotoğraflarını ekle ve ilanını oluştur."}
             </p>
           </div>
+
+          {editLoading && <p className="mb-5 text-sm" style={{ color: mutedColor }}>İlan bilgileri yükleniyor...</p>}
 
           {error && (
             <div
@@ -821,13 +893,13 @@ export default function IlanEklePage() {
                     color: accentColor,
                   }}
                 >
-                  {photos.length}/{MAX_PHOTOS}
+                  {existingPhotos.length + photos.length}/{MAX_PHOTOS}
                 </span>
               </div>
 
               <p className="mb-3 text-sm" style={{ color: mutedColor }}>
                 En az 2, en fazla 8 fotoğraf. JPG, PNG veya WebP; her biri en
-                fazla 5 MB.
+                fazla 5 MB. Mevcut fotoğrafları koruyabilir veya kaldırabilirsin.
               </p>
 
               <label
@@ -875,6 +947,17 @@ export default function IlanEklePage() {
                 />
               </label>
 
+              {existingPhotos.length > 0 && (
+                <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {existingPhotos.map((photo, index) => (
+                    <div key={`${photo}-${index}`} className="relative overflow-hidden rounded-xl border" style={{ borderColor: inputStyle.border.split(" ").at(-1) }}>
+                      <img src={photo} alt={`Mevcut fotoğraf ${index + 1}`} className="h-28 w-full object-cover" />
+                      <button type="button" onClick={() => setExistingPhotos((current) => current.filter((_, i) => i !== index))} className="absolute right-1 top-1 rounded-lg bg-black/70 px-2 py-1 text-xs font-bold text-white">Kaldır</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {photos.length > 0 && (
                 <ul className="mt-3 space-y-2">
                   {photos.map((photo, index) => (
@@ -912,7 +995,7 @@ export default function IlanEklePage() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || editLoading}
               className="flex w-full items-center justify-center gap-2 rounded-xl px-5 py-4 font-bold transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
               style={{
                 background: darkMode
@@ -946,10 +1029,10 @@ export default function IlanEklePage() {
                       strokeLinecap="round"
                     />
                   </svg>
-                  İlan oluşturuluyor...
+                  {editId ? "İlan güncelleniyor..." : "İlan oluşturuluyor..."}
                 </>
               ) : (
-                "İlanı oluştur"
+                editId ? "Değişiklikleri kaydet" : "İlanı oluştur"
               )}
             </button>
 
@@ -967,7 +1050,7 @@ export default function IlanEklePage() {
           className="py-6 text-center text-xs"
           style={{ color: darkMode ? "#d1c5e3" : "#756887" }}
         >
-          CAT-ALOG · Kediler için ilan platformu
+          CATalog · Kediler için ilan platformu
         </footer>
       </div>
     </main>
